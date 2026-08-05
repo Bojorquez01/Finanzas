@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import * as XLSX from 'xlsx';
 
 function SmartDebtOptimizer({ session }) {
   const [minLiving, setMinLiving] = useState(0);
@@ -16,7 +17,7 @@ function SmartDebtOptimizer({ session }) {
     const userEmail = session.user.email;
     const userId = session.user.id;
 
-    // 1. Sueldo y mínimo indispensable mensual
+    // 1. Sueldo y mínimo indispensable
     const { data: salaryData } = await supabase
       .from('user_salary_config')
       .select('*')
@@ -36,13 +37,13 @@ function SmartDebtOptimizer({ session }) {
     const extrasSum = (incData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
     const totalMonthlyIncome = salaryMonthly + extrasSum;
 
-    // 2. Compromisos de tarjetas (Gastos + Proyecciones)
+    // 2. Compromisos de tarjetas
     const { data: expData } = await supabase.from('expenses').select('amount');
     const expSum = (expData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
 
     const { data: projData } = await supabase
       .from('card_statement_projections')
-      .select('*, credit_cards(card_name, payment_due_day)')
+      .select('*, credit_cards(card_name)')
       .order('target_month', { ascending: true });
 
     const projSum = (projData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
@@ -60,7 +61,6 @@ function SmartDebtOptimizer({ session }) {
       (d.debtor_id === userId && d.creditor_email !== userEmail)
     );
 
-    // Consolidar deudas y tarjetas en una lista con prioridad
     let itemsToPay = [];
 
     validDebts.forEach(d => {
@@ -73,7 +73,6 @@ function SmartDebtOptimizer({ session }) {
       });
     });
 
-    // Agrupar proyecciones de tarjetas
     const cardMap = {};
     (projData || []).forEach(p => {
       const cardName = p.credit_cards ? p.credit_cards.card_name : 'Tarjeta';
@@ -91,10 +90,8 @@ function SmartDebtOptimizer({ session }) {
 
     Object.values(cardMap).forEach(c => itemsToPay.push(c));
 
-    // Cálculos por quincena
     const quincenalIncome = totalMonthlyIncome / 2;
     const quincenalMinLiving = minExpMonthly / 2;
-    // Excedente libre real por quincena (descontando supervivencia y reparto de tarjetas)
     const quincenalFreeCash = quincenalIncome - quincenalMinLiving - (totalCardCommitments / 4);
 
     setSummaryData({
@@ -104,15 +101,14 @@ function SmartDebtOptimizer({ session }) {
       safeCashQ: quincenalFreeCash > 0 ? quincenalFreeCash : 0
     });
 
-    // 4. Motor de Simulación Quincenal (Simula hasta 12 quincenas o hasta saldar todo)
+    // 4. Simulación Quincenal
     let simulatedItems = itemsToPay.map(i => ({ ...i }));
     let timeline = [];
     let qIndex = 1;
 
-    while (simulatedItems.some(i => i.balance > 1) && qIndex <= 10) {
+    while (simulatedItems.some(i => i.balance > 1) && qIndex <= 12) {
       let availableCashForDebts = quincenalFreeCash > 0 ? quincenalFreeCash : 0;
       
-      // Ordenar por prioridad (1: Alta, 2: Media, 3: Baja) y luego por menor monto (bola de nieve)
       simulatedItems.sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority;
         return a.balance - b.balance;
@@ -124,7 +120,6 @@ function SmartDebtOptimizer({ session }) {
         if (item.balance <= 0) continue;
 
         if (availableCashForDebts <= 0) {
-          // Ya no queda dinero libre en esta quincena para más abonos
           quincenaPayments.push({
             name: item.name,
             description: item.description,
@@ -134,7 +129,6 @@ function SmartDebtOptimizer({ session }) {
           continue;
         }
 
-        // Cuánto podemos abonar a este ítem en esta quincena
         let payment = Math.min(availableCashForDebts, item.balance);
         item.balance -= payment;
         availableCashForDebts -= payment;
@@ -160,23 +154,72 @@ function SmartDebtOptimizer({ session }) {
     setSchedule(timeline);
   }
 
+  // Función para exportar a Excel
+  const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Hoja 1: Resumen
+    const summaryRows = [
+      ["Concepto", "Monto Mensual", "Monto Quincenal"],
+      ["Ingresos Totales (Sueldo + Extras)", summaryData.netInc, summaryData.netInc / 2],
+      ["Colchón Intocable (Supervivencia)", minLiving, minLiving / 2],
+      ["Compromisos Totales de Tarjetas", summaryData.totalCards, summaryData.totalCards / 2],
+      ["Excedente Libre para Deudas", summaryData.netInc - minLiving - summaryData.totalCards, summaryData.safeCashQ]
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen Financiero");
+
+    // Hoja 2: Proyección Quincenal
+    const projRows = [
+      ["Quincena", "Concepto", "Descripción", "Pago Sugerido", "Saldo Restante", "Efectivo Libre Restante"]
+    ];
+
+    schedule.forEach(q => {
+      q.payments.forEach(p => {
+        projRows.push([
+          q.label,
+          p.name,
+          p.description,
+          p.paid,
+          p.remaining,
+          q.leftoverCash
+        ]);
+      });
+    });
+
+    const wsProj = XLSX.utils.aoa_to_sheet(projRows);
+    XLSX.utils.book_append_sheet(wb, wsProj, "Proyección Quincenal");
+
+    // Descargar archivo
+    XLSX.writeFile(wb, "plan_liquidador_deudas.xlsx");
+  };
+
   return (
     <div style={{ background: '#e8f4fd', border: '1px solid #b8daff', padding: '20px', borderRadius: '8px', marginBottom: '30px', fontFamily: 'sans-serif' }}>
-      <h3 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '18px' }}>🛡️ Optimizador y Red de Seguridad Financiera</h3>
-      <p style={{ fontSize: '13px', color: '#0056b3', marginBottom: '15px' }}>
-        Planificador inteligente que calcula tus pagos quincena tras quincena respetando tu colchón de supervivencia y tus prioridades.
-      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
+        <div>
+          <h3 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '18px' }}>🛡️ Optimizador y Red de Seguridad Financiera</h3>
+          <p style={{ fontSize: '13px', color: '#0056b3', margin: 0 }}>
+            Protege tu supervivencia básica y exporta tu plan de liquidación detallado a Excel.
+          </p>
+        </div>
+        <button 
+          onClick={exportToExcel}
+          style={{ background: '#27ae60', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          📥 Descargar Plan en Excel (.xlsx)
+        </button>
+      </div>
 
       {/* Indicadores */}
-      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COLCHÓN QUINCENAL (SUPERVIVENCIA)</p>
+          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COLCHÓN QUINCENAL</p>
           <p style={{ margin: 0, fontSize: '18px', color: '#c0392b', fontWeight: 'bold' }}>${fmt(minLiving / 2)}</p>
-          <small style={{ fontSize: '10px', color: '#888' }}>Mitad del mínimo mensual intocable</small>
         </div>
 
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TOTALES TARJETAS</p>
+          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TARJETAS</p>
           <p style={{ margin: 0, fontSize: '18px', color: '#dc3545', fontWeight: 'bold' }}>-${fmt(summaryData.totalCards)}</p>
         </div>
 
@@ -185,61 +228,7 @@ function SmartDebtOptimizer({ session }) {
           <p style={{ margin: 0, fontSize: '18px', color: summaryData.safeCashQ >= 0 ? '#27ae60' : '#c0392b', fontWeight: 'bold' }}>
             ${fmt(summaryData.safeCashQ)}
           </p>
-          <small style={{ fontSize: '10px', color: '#888' }}>Disponible por quincena para abonos</small>
         </div>
-      </div>
-
-      {/* Tabla de Proyección de Pagos Quincenales */}
-      <div style={{ background: '#fff', padding: '15px', borderRadius: '6px', border: '1px solid #b8daff' }}>
-        <h4 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '15px' }}>📅 Tabla de Proyección y Pagos por Quincena</h4>
-        
-        {schedule.length === 0 ? (
-          <p style={{ fontSize: '13px', color: '#27ae60', fontWeight: 'bold' }}>
-            🎉 ¡Felicidades! No tienes deudas ni compromisos pendientes por cubrir.
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <p style={{ fontSize: '12px', color: '#555', margin: 0 }}>
-              A continuación se muestra la recomendación paso a paso de cómo se irán liquidando tus deudas y tarjetas quincena tras quincena con tu excedente libre:
-            </p>
-
-            {schedule.map((q) => (
-              <div key={q.quincenaNum} style={{ background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '6px', padding: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '6px', marginBottom: '8px' }}>
-                  <strong style={{ color: '#004085', fontSize: '14px' }}>{q.label}</strong>
-                  <span style={{ fontSize: '12px', color: '#666' }}>Efectivo libre restante tras abonos: <strong>${fmt(q.leftoverCash)}</strong></span>
-                </div>
-
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ background: '#e9ecef', color: '#333' }}>
-                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc' }}>Concepto</th>
-                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc' }}>Descripción</th>
-                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc', textAlign: 'right' }}>Pago Sugerido</th>
-                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc', textAlign: 'right' }}>Saldo Restante</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {q.payments.map((p, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
-                          <td style={{ padding: '6px', fontWeight: 'bold', color: '#2c3e50' }}>{p.name}</td>
-                          <td style={{ padding: '6px', color: '#555' }}>{p.description}</td>
-                          <td style={{ padding: '6px', textAlign: 'right', color: p.paid > 0 ? '#27ae60' : '#888', fontWeight: 'bold' }}>
-                            ${fmt(p.paid)}
-                          </td>
-                          <td style={{ padding: '6px', textAlign: 'right', color: '#c0392b', fontWeight: 'bold' }}>
-                            ${fmt(p.remaining)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
