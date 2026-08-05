@@ -11,7 +11,6 @@ function CreditCardManager({ session }) {
   const [creditLimit, setCreditLimit] = useState('');
   const [paymentDueDay, setPaymentDueDay] = useState('');
   
-  // Estados para edición de tarjetas existentes
   const [editingCardId, setEditingCardId] = useState(null);
   const [editCardName, setEditCardName] = useState('');
   const [editCreditLimit, setEditCreditLimit] = useState('');
@@ -22,6 +21,11 @@ function CreditCardManager({ session }) {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
+
+  // Estados para MSI (Meses sin intereses / Cuotas futuras estilo Nu o BBVA)
+  const [isMsi, setIsMsi] = useState(false);
+  const [totalInstallments, setTotalInstallments] = useState('');
+  const [currentInstallment, setCurrentInstallment] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -66,7 +70,6 @@ function CreditCardManager({ session }) {
     }
   };
 
-  // Iniciar modo de edición para una tarjeta
   const startEditingCard = (card) => {
     setEditingCardId(card.id);
     setEditCardName(card.card_name);
@@ -74,7 +77,6 @@ function CreditCardManager({ session }) {
     setEditPaymentDueDay(card.payment_due_day || '');
   };
 
-  // Guardar cambios de tarjeta editada
   const handleUpdateCard = async (e, cardId) => {
     e.preventDefault();
     if (!editCardName.trim()) return;
@@ -98,19 +100,36 @@ function CreditCardManager({ session }) {
     e.preventDefault();
     if (!selectedCardId || !expenseAmount) return;
 
+    const totalAmt = parseFloat(expenseAmount);
+    let monthlyAmt = totalAmt;
+    let tInst = 1;
+    let cInst = 1;
+
+    if (isMsi && totalInstallments) {
+      tInst = parseInt(totalInstallments) || 1;
+      cInst = parseInt(currentInstallment) || 1;
+      monthlyAmt = totalAmt / tInst; // Cuota del mes actual
+    }
+
     const { error } = await supabase.from('expenses').insert([{
       card_id: selectedCardId,
       category_id: selectedCatId ? parseInt(selectedCatId) : null,
-      amount: parseFloat(expenseAmount),
+      amount: monthlyAmt, // Guardamos la mensualidad del mes actual en el total activo
       description: expenseDesc,
       is_recurring: isRecurring,
-      recurrence_frequency: 'mensual'
+      is_msi: isMsi,
+      total_installments: tInst,
+      current_installment: cInst,
+      monthly_installment_amount: monthlyAmt
     }]);
 
     if (!error) {
       setExpenseAmount('');
       setExpenseDesc('');
       setIsRecurring(false);
+      setIsMsi(false);
+      setTotalInstallments('');
+      setCurrentInstallment('');
       fetchData();
     }
   };
@@ -123,7 +142,7 @@ function CreditCardManager({ session }) {
   return (
     <div style={{ marginTop: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>
-        Tarjetas de Crédito y Suscripciones Recurrentes
+        Tarjetas de Crédito, Suscripciones y MSI (Meses sin intereses)
       </h3>
 
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
@@ -134,7 +153,7 @@ function CreditCardManager({ session }) {
           <form onSubmit={handleCreateCategory} style={{ display: 'flex', gap: '8px' }}>
             <input 
               type="text" 
-              placeholder="Ej. Streaming, Seguros" 
+              placeholder="Ej. Streaming, Ropa" 
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
               required
@@ -151,11 +170,11 @@ function CreditCardManager({ session }) {
 
         {/* Tarjetas */}
         <div style={{ flex: 1, minWidth: '250px', background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
-          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Agregar Tarjeta de Crédito</h4>
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Agregar Tarjeta (Nu, BBVA, etc.)</h4>
           <form onSubmit={handleCreateCard} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <input 
               type="text" 
-              placeholder="Nombre (ej. BBVA, Nu)" 
+              placeholder="Nombre (ej. Nu, BBVA Oro)" 
               value={cardName}
               onChange={(e) => setCardName(e.target.value)}
               required
@@ -186,9 +205,9 @@ function CreditCardManager({ session }) {
 
       </div>
 
-      {/* Registrar Gasto o Suscripción Recurrente */}
+      {/* Registrar Gasto con opción de MSI */}
       <div style={{ background: '#e8f4fd', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #b8daff' }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#004085' }}>Registrar Gasto o Suscripción Fija (Spotify, Seguro, etc.)</h4>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#004085' }}>Registrar Gasto o Compra a Meses (MSI)</h4>
         <form onSubmit={handleCreateExpense} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <select 
@@ -217,37 +236,63 @@ function CreditCardManager({ session }) {
             <input 
               type="number" 
               step="0.01" 
-              placeholder="Monto ($)" 
+              placeholder={isMsi ? "Monto Total de la Compra ($)" : "Monto del Gasto ($)"} 
               value={expenseAmount}
               onChange={(e) => setExpenseAmount(e.target.value)}
               required
-              style={{ width: '90px', padding: '7px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+              style={{ width: '170px', padding: '7px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
 
             <input 
               type="text" 
-              placeholder="Descripción (ej. Spotify Familiar, Seguro Auto)" 
+              placeholder="Descripción (ej. Pantalla, Seguro)" 
               value={expenseDesc}
               onChange={(e) => setExpenseDesc(e.target.value)}
               style={{ flex: 2, minWidth: '150px', padding: '7px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* Opciones de MSI y Recurrente */}
+          <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap', background: '#fff', padding: '10px', borderRadius: '6px' }}>
             <label style={{ fontSize: '12px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-              <input 
-                type="checkbox" 
-                checked={isRecurring} 
-                onChange={(e) => setIsRecurring(e.target.checked)} 
-              />
-              🔄 Es un gasto fijo / suscripción mensual recurrente
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+              🔄 Gasto recurrente mensual (Spotify, etc.)
             </label>
-            <button type="submit" style={{ padding: '7px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>+ Agregar Gasto</button>
+
+            <label style={{ fontSize: '12px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={isMsi} onChange={(e) => setIsMsi(e.target.checked)} />
+              💳 Compra a Meses Sin Intereses (MSI)
+            </label>
+
+            {isMsi && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input 
+                  type="number" 
+                  min="2" 
+                  placeholder="Total Meses (ej. 12)" 
+                  value={totalInstallments}
+                  onChange={(e) => setTotalInstallments(e.target.value)}
+                  style={{ width: '110px', padding: '5px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  required
+                />
+                <input 
+                  type="number" 
+                  min="1" 
+                  placeholder="Mes actual (ej. 3)" 
+                  value={currentInstallment}
+                  onChange={(e) => setCurrentInstallment(e.target.value)}
+                  style={{ width: '110px', padding: '5px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  required
+                />
+              </div>
+            )}
+
+            <button type="submit" style={{ marginLeft: 'auto', padding: '7px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>+ Registrar Gasto</button>
           </div>
         </form>
       </div>
 
-      {/* Listado de Tarjetas con opción de Edición */}
+      {/* Listado */}
       <div>
         <h4 style={{ color: '#333' }}>Mis Tarjetas y Consumos</h4>
         {cards.length === 0 ? (
@@ -261,34 +306,11 @@ function CreditCardManager({ session }) {
 
               return (
                 <div key={card.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px' }}>
-                  
-                  {/* Si se está editando esta tarjeta */}
                   {isEditing ? (
                     <form onSubmit={(e) => handleUpdateCard(e, card.id)} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px', background: '#f8f9fa', padding: '10px', borderRadius: '6px' }}>
-                      <input 
-                        type="text" 
-                        value={editCardName}
-                        onChange={(e) => setEditCardName(e.target.value)}
-                        required
-                        style={{ flex: 2, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                      />
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        placeholder="Límite" 
-                        value={editCreditLimit}
-                        onChange={(e) => setEditCreditLimit(e.target.value)}
-                        style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                      />
-                      <input 
-                        type="number" 
-                        min="1" 
-                        max="31" 
-                        placeholder="Día límite" 
-                        value={editPaymentDueDay}
-                        onChange={(e) => setEditPaymentDueDay(e.target.value)}
-                        style={{ width: '90px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                      />
+                      <input type="text" value={editCardName} onChange={(e) => setEditCardName(e.target.value)} required style={{ flex: 2, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                      <input type="number" step="0.01" placeholder="Límite" value={editCreditLimit} onChange={(e) => setEditCreditLimit(e.target.value)} style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                      <input type="number" min="1" max="31" placeholder="Día límite" value={editPaymentDueDay} onChange={(e) => setEditPaymentDueDay(e.target.value)} style={{ width: '90px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} />
                       <button type="submit" style={{ padding: '6px 10px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Guardar</button>
                       <button type="button" onClick={() => setEditingCardId(null)} style={{ padding: '6px 10px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Cancelar</button>
                     </form>
@@ -297,21 +319,13 @@ function CreditCardManager({ session }) {
                       <div>
                         <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0056b3' }}>💳 {card.card_name}</span>
                         {card.payment_due_day ? (
-                          <span style={{ marginLeft: '12px', fontSize: '12px', background: '#fff3cd', color: '#856404', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                            Día límite de pago: Día {card.payment_due_day}
-                          </span>
+                          <span style={{ marginLeft: '12px', fontSize: '12px', background: '#fff3cd', color: '#856404', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>Día límite: Día {card.payment_due_day}</span>
                         ) : (
-                          <span style={{ marginLeft: '12px', fontSize: '12px', background: '#f8d7da', color: '#721c24', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                            Sin día límite configurado
-                          </span>
+                          <span style={{ marginLeft: '12px', fontSize: '12px', background: '#f8d7da', color: '#721c24', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>Sin día límite</span>
                         )}
-                        <button onClick={() => startEditingCard(card)} style={{ marginLeft: '10px', background: 'transparent', border: 'none', color: '#007bff', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>
-                          Editar
-                        </button>
+                        <button onClick={() => startEditingCard(card)} style={{ marginLeft: '10px', background: 'transparent', border: 'none', color: '#007bff', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Editar</button>
                       </div>
-                      <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>
-                        Total Consumido: ${totalCardSpent.toFixed(2)}
-                      </span>
+                      <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Mensual a Pagar: ${totalCardSpent.toFixed(2)}</span>
                     </div>
                   )}
 
@@ -326,11 +340,8 @@ function CreditCardManager({ session }) {
                               {exp.expense_categories ? exp.expense_categories.name : 'General'}
                             </span>
                             <span>{exp.description || 'Sin descripción'}</span>
-                            {exp.is_recurring && (
-                              <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>
-                                🔄 Recurrente mensual
-                              </span>
-                            )}
+                            {exp.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
+                            {exp.is_msi && <span style={{ marginLeft: '8px', background: '#fff3cd', color: '#856404', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>💳 MSI (Mes {exp.current_installment} de {exp.total_installments})</span>}
                           </div>
                           <div>
                             <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>-${exp.amount}</span>

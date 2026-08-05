@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard';
 import PaymentPlanner from './components/PaymentPlanner';
 import IncomeManager from './components/IncomeManager';
 import CreditCardManager from './components/CreditCardManager';
+import SavingsManager from './components/SavingsManager';
 import DebtManager from './components/DebtManager';
 import { supabase } from './supabaseClient';
 
@@ -43,19 +44,16 @@ function App() {
         </div>
       </div>
 
-      {/* Dashboard General */}
       <Dashboard session={session} />
 
-      {/* Asistente de Pagos Quincenales */}
       <PaymentPlanner session={session} />
 
-      {/* Módulo de Ingresos */}
       <IncomeManager session={session} />
 
-      {/* Módulo de Tarjetas y Gastos */}
+      <SavingsManager session={session} />
+
       <CreditCardManager session={session} />
 
-      {/* Módulo de Deudas */}
       <div style={{ marginTop: '40px' }}>
         <DebtManager session={session} />
       </div>
