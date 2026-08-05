@@ -21,10 +21,13 @@ function DebtManager({ session }) {
 
   async function fetchDebts() {
     const userEmail = session.user.email;
+    const userId = session.user.id;
+
+    // Buscamos abarcando correo y ID antiguo para garantizar que no se oculte nada
     const { data, error } = await supabase
       .from('debts')
       .select('*')
-      .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail}`);
+      .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail},debtor_id.eq.${userId}`);
 
     if (!error) setDebts(data || []);
   }
@@ -39,8 +42,6 @@ function DebtManager({ session }) {
 
     const debtorEmail = relationType === 'yo_debo' ? session.user.email : otherEmail.trim();
     const creditorEmail = relationType === 'yo_debo' ? otherEmail.trim() : session.user.email;
-
-    // Si tú dices que debes, pasa directo a 'pendiente'. Si otro dice que le debes, queda 'por_aceptar'
     const initialStatus = relationType === 'yo_debo' ? 'pendiente' : 'por_aceptar';
 
     const { error } = await supabase
@@ -48,12 +49,14 @@ function DebtManager({ session }) {
       .insert([{
         debtor_email: debtorEmail,
         creditor_email: creditorEmail,
+        debtor_id: relationType === 'yo_debo' ? session.user.id : null,
         amount: totalAmt,
         total_months: months,
         monthly_payment: monthlyPay,
         description: description,
         is_recurring: isRecurring,
-        status: initialStatus
+        status: initialStatus,
+        priority: 2
       }]);
 
     if (!error) {
@@ -66,26 +69,14 @@ function DebtManager({ session }) {
     }
   };
 
-  // Aceptar una deuda que alguien registró a tu nombre
   const handleAcceptNewDebt = async (debtId) => {
-    const { error } = await supabase
-      .from('debts')
-      .update({ status: 'pendiente' })
-      .eq('id', debtId);
-
+    const { error } = await supabase.from('debts').update({ status: 'pendiente' }).eq('id', debtId);
     if (!error) fetchDebts();
   };
 
-  // Rechazar / Eliminar una deuda que alguien registró erróneamente o malintencionadamente a tu nombre
   const handleRejectNewDebt = async (debtId) => {
-    const confirmReject = window.confirm('¿Estás seguro de rechazar y eliminar esta deuda?');
-    if (!confirmReject) return;
-
-    const { error } = await supabase
-      .from('debts')
-      .delete()
-      .eq('id', debtId);
-
+    if (!window.confirm('¿Estás seguro de rechazar y eliminar esta deuda?')) return;
+    const { error } = await supabase.from('debts').delete().eq('id', debtId);
     if (!error) fetchDebts();
   };
 
@@ -96,11 +87,7 @@ function DebtManager({ session }) {
       return;
     }
 
-    const { error } = await supabase
-      .from('debts')
-      .update({ status: 'pago_solicitado', pending_amount: payVal })
-      .eq('id', debtId);
-
+    const { error } = await supabase.from('debts').update({ status: 'pago_solicitado', pending_amount: payVal }).eq('id', debtId);
     if (!error) fetchDebts();
   };
 
@@ -110,24 +97,19 @@ function DebtManager({ session }) {
 
     if (confirm) {
       const finalPaidAmount = correctionAmounts[debtId] !== undefined ? parseFloat(correctionAmounts[debtId]) : originalPendingAmt;
-
       if (isNaN(finalPaidAmount) || finalPaidAmount <= 0) {
         alert('Ingresa un monto válido a aplicar.');
         return;
       }
-
       newAmount = currentAmount - finalPaidAmount;
       newStatus = newAmount <= 0 ? 'pagado' : 'pendiente';
     }
 
-    const { error } = await supabase
-      .from('debts')
-      .update({
-        amount: newAmount > 0 ? newAmount : 0,
-        status: newStatus,
-        pending_amount: 0
-      })
-      .eq('id', debtId);
+    const { error } = await supabase.from('debts').update({
+      amount: newAmount > 0 ? newAmount : 0,
+      status: newStatus,
+      pending_amount: 0
+    }).eq('id', debtId);
 
     if (!error) {
       const copy = { ...correctionAmounts };
@@ -138,7 +120,10 @@ function DebtManager({ session }) {
   };
 
   const userEmail = session.user.email;
-  const myDebtsAsDebtor = debts.filter(d => d.debtor_email === userEmail);
+  const userId = session.user.id;
+  
+  // Filtros compatibles con registros por correo o ID antiguo
+  const myDebtsAsDebtor = debts.filter(d => d.debtor_email === userEmail || d.debtor_id === userId);
   const myDebtsAsCreditor = debts.filter(d => d.creditor_email === userEmail);
 
   return (
@@ -209,7 +194,7 @@ function DebtManager({ session }) {
         </div>
       </form>
 
-      {/* Mis Deudas (Lo que debo) */}
+      {/* Mis Deudas */}
       <div style={{ marginBottom: '30px' }}>
         <h4 style={{ color: '#c0392b' }}>Mis Deudas (Lo que debo)</h4>
         {myDebtsAsDebtor.length === 0 ? (
@@ -222,7 +207,7 @@ function DebtManager({ session }) {
               return (
                 <div key={debt.id} style={{ padding: '12px', background: isPendingApproval ? '#fff3cd' : '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <div>
-                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Acreedor: {debt.creditor_email}</p>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Acreedor: {debt.creditor_email || 'No especificado'}</p>
                     <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
                       {debt.description || 'Sin descripción'}
                       {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
@@ -231,11 +216,10 @@ function DebtManager({ session }) {
                       Restante: ${fmt(debt.amount)}
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', fontStyle: 'italic', color: isPendingApproval ? '#856404' : (debt.status === 'pago_solicitado' ? '#e67e22' : '#27ae60') }}>
-                      Estado: {isPendingApproval ? '⚠️ Alguien registró esta deuda a tu nombre (Requiere tu aprobación)' : (debt.status === 'pago_solicitado' ? `Pago de $${fmt(debt.pending_amount)} en revisión` : debt.status)}
+                      Estado: {isPendingApproval ? '⚠️ Requiere tu aprobación' : (debt.status === 'pago_solicitado' ? `Pago de $${fmt(debt.pending_amount)} en revisión` : debt.status)}
                     </p>
                   </div>
 
-                  {/* Si requiere aprobación porque alguien más la creó */}
                   {isPendingApproval ? (
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => handleAcceptNewDebt(debt.id)} style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Aceptar</button>
@@ -273,7 +257,7 @@ function DebtManager({ session }) {
             {myDebtsAsCreditor.map(debt => (
               <div key={debt.id} style={{ padding: '12px', background: debt.status === 'pago_solicitado' ? '#fff3cd' : '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Deudor: {debt.debtor_email} | Total Restante: ${fmt(debt.amount)}</p>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Deudor: {debt.debtor_email || 'No especificado'} | Total Restante: ${fmt(debt.amount)}</p>
                   <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
                     {debt.description}
                     {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
