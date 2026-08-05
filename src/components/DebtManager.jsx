@@ -28,7 +28,28 @@ function DebtManager({ session }) {
       .select('*')
       .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail},debtor_id.eq.${userId}`);
 
-    if (!error) setDebts(data || []);
+    if (!error && data) {
+      const currentMonth = new Date().toISOString().slice(0, 7); // Ej: '2026-08'
+      let updatedData = [...data];
+
+      // Verificar y autorenovar deudas recurrentes si estamos en un nuevo mes
+      for (let debt of updatedData) {
+        if (debt.is_recurring && debt.last_reset_month !== currentMonth) {
+          await supabase
+            .from('debts')
+            .update({ 
+              status: 'pendiente', 
+              last_reset_month: currentMonth 
+            })
+            .eq('id', debt.id);
+
+          debt.status = 'pendiente';
+          debt.last_reset_month = currentMonth;
+        }
+      }
+
+      setDebts(updatedData);
+    }
   }
 
   const handleCreateDebt = async (e) => {
@@ -38,6 +59,7 @@ function DebtManager({ session }) {
     const totalAmt = parseFloat(amount);
     const months = totalMonths ? parseInt(totalMonths) : null;
     const monthlyPay = months ? totalAmt / months : null;
+    const currentMonth = new Date().toISOString().slice(0, 7);
 
     const debtorEmail = relationType === 'yo_debo' ? session.user.email : otherEmail.trim();
     const creditorEmail = relationType === 'yo_debo' ? otherEmail.trim() : session.user.email;
@@ -55,7 +77,8 @@ function DebtManager({ session }) {
         description: description,
         is_recurring: isRecurring,
         status: initialStatus,
-        priority: 2
+        priority: 2,
+        last_reset_month: currentMonth
       }]);
 
     if (!error) {
@@ -121,7 +144,6 @@ function DebtManager({ session }) {
   const userEmail = session.user.email;
   const userId = session.user.id;
   
-  // Filtros robustos: Separan perfectamente lo que debes de lo que te deben
   const myDebtsAsDebtor = debts.filter(d => 
     d.debtor_email === userEmail || 
     (d.debtor_id === userId && d.creditor_email !== userEmail)
