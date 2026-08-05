@@ -5,6 +5,7 @@ function CreditCardManager({ session }) {
   const [categories, setCategories] = useState([]);
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [projections, setProjections] = useState([]); // Gastos/estados futuros
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [cardName, setCardName] = useState('');
@@ -18,8 +19,11 @@ function CreditCardManager({ session }) {
   const [editCutoffDay, setEditCutoffDay] = useState('');
   const [editPaymentDueDay, setEditPaymentDueDay] = useState('');
 
-  // Tarjeta seleccionada para ver su detalle de meses futuros
+  // Modal de detalle y meses futuros
   const [activeCardDetail, setActiveCardDetail] = useState(null);
+  const [projMonth, setProjMonth] = useState(''); // Ej: '2026-10'
+  const [projAmount, setProjAmount] = useState('');
+  const [projDesc, setProjDesc] = useState('');
 
   const [selectedCardId, setSelectedCardId] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('');
@@ -47,6 +51,9 @@ function CreditCardManager({ session }) {
 
     const { data: expData } = await supabase.from('expenses').select('*, credit_cards(card_name), expense_categories(name)').order('id', { ascending: false });
     if (expData) setExpenses(expData);
+
+    const { data: projData } = await supabase.from('card_statement_projections').select('*').order('target_month', { ascending: true });
+    if (projData) setProjections(projData);
   }
 
   const handleCreateCategory = async (e) => {
@@ -147,10 +154,34 @@ function CreditCardManager({ session }) {
     if (!error) fetchData();
   };
 
+  // Registrar un cargo o monto para un mes futuro en esta tarjeta
+  const handleAddProjection = async (e) => {
+    e.preventDefault();
+    if (!activeCardDetail || !projMonth || !projAmount) return;
+
+    const { error } = await supabase.from('card_statement_projections').insert([{
+      card_id: activeCardDetail.id,
+      target_month: projMonth,
+      amount: parseFloat(projAmount),
+      description: projDesc
+    }]);
+
+    if (!error) {
+      setProjAmount('');
+      setProjDesc('');
+      fetchData();
+    }
+  };
+
+  const handleDeleteProjection = async (id) => {
+    const { error } = await supabase.from('card_statement_projections').delete().eq('id', id);
+    if (!error) fetchData();
+  };
+
   return (
     <div style={{ marginTop: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>
-        Tarjetas de Crédito, Fechas de Corte y Estados Fututos (MSI)
+        Tarjetas de Crédito y Estados de Cuenta Futuros
       </h3>
 
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
@@ -176,7 +207,7 @@ function CreditCardManager({ session }) {
           </div>
         </div>
 
-        {/* Tarjetas con Fecha de Corte y Pago */}
+        {/* Tarjetas */}
         <div style={{ flex: 1, minWidth: '280px', background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd' }}>
           <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Agregar Tarjeta (Nu, BBVA, etc.)</h4>
           <form onSubmit={handleCreateCard} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -205,7 +236,6 @@ function CreditCardManager({ session }) {
                 value={cutoffDay}
                 onChange={(e) => setCutoffDay(e.target.value)}
                 style={{ width: '80px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                title="Día de corte del mes"
               />
               <input 
                 type="number" 
@@ -215,7 +245,6 @@ function CreditCardManager({ session }) {
                 value={paymentDueDay}
                 onChange={(e) => setPaymentDueDay(e.target.value)}
                 style={{ width: '80px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                title="Día límite de pago del mes"
               />
             </div>
             <button type="submit" style={{ padding: '6px 10px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>+ Registrar Tarjeta</button>
@@ -224,9 +253,9 @@ function CreditCardManager({ session }) {
 
       </div>
 
-      {/* Registrar Gasto con MSI */}
+      {/* Registrar Gasto del Mes Actual */}
       <div style={{ background: '#e8f4fd', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #b8daff' }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#004085' }}>Registrar Gasto o Compra a Meses (MSI)</h4>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#004085' }}>Registrar Gasto del Mes Actual</h4>
         <form onSubmit={handleCreateExpense} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <select 
@@ -255,7 +284,7 @@ function CreditCardManager({ session }) {
             <input 
               type="number" 
               step="0.01" 
-              placeholder={isMsi ? "Monto Total de la Compra ($)" : "Monto del Gasto ($)"} 
+              placeholder="Monto del Gasto ($)" 
               value={expenseAmount}
               onChange={(e) => setExpenseAmount(e.target.value)}
               required
@@ -264,55 +293,26 @@ function CreditCardManager({ session }) {
 
             <input 
               type="text" 
-              placeholder="Descripción (ej. Pantalla a MSI, Spotify)" 
+              placeholder="Descripción (ej. Súper, Gasolina)" 
               value={expenseDesc}
               onChange={(e) => setExpenseDesc(e.target.value)}
               style={{ flex: 2, minWidth: '150px', padding: '7px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap', background: '#fff', padding: '10px', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <label style={{ fontSize: '12px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
               <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
-              🔄 Gasto recurrente mensual
+              🔄 Gasto recurrente mensual (Spotify, etc.)
             </label>
-
-            <label style={{ fontSize: '12px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-              <input type="checkbox" checked={isMsi} onChange={(e) => setIsMsi(e.target.checked)} />
-              💳 Compra a Meses Sin Intereses (MSI)
-            </label>
-
-            {isMsi && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input 
-                  type="number" 
-                  min="2" 
-                  placeholder="Total Meses (ej. 12)" 
-                  value={totalInstallments}
-                  onChange={(e) => setTotalInstallments(e.target.value)}
-                  style={{ width: '110px', padding: '5px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                  required
-                />
-                <input 
-                  type="number" 
-                  min="1" 
-                  placeholder="Mes actual (ej. 3)" 
-                  value={currentInstallment}
-                  onChange={(e) => setCurrentInstallment(e.target.value)}
-                  style={{ width: '110px', padding: '5px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                  required
-                />
-              </div>
-            )}
-
-            <button type="submit" style={{ marginLeft: 'auto', padding: '7px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>+ Registrar Gasto</button>
+            <button type="submit" style={{ padding: '7px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>+ Registrar Gasto Actual</button>
           </div>
         </form>
       </div>
 
       {/* Listado de Tarjetas */}
       <div>
-        <h4 style={{ color: '#333' }}>Mis Tarjetas y Consumos</h4>
+        <h4 style={{ color: '#333' }}>Mis Tarjetas</h4>
         {cards.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#666' }}>No hay tarjetas registradas.</p>
         ) : (
@@ -350,13 +350,13 @@ function CreditCardManager({ session }) {
                         >
                           👁️ Ver Detalle y Meses Futuros
                         </button>
-                        <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Mes: ${totalCardSpent.toFixed(2)}</span>
+                        <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Mes Actual: ${totalCardSpent.toFixed(2)}</span>
                       </div>
                     </div>
                   )}
 
                   {cardExpenses.length === 0 ? (
-                    <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Sin consumos registrados.</p>
+                    <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Sin consumos este mes.</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {cardExpenses.map(exp => (
@@ -367,7 +367,6 @@ function CreditCardManager({ session }) {
                             </span>
                             <span>{exp.description || 'Sin descripción'}</span>
                             {exp.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
-                            {exp.is_msi && <span style={{ marginLeft: '8px', background: '#fff3cd', color: '#856404', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>💳 MSI ({exp.current_installment}/{exp.total_installments})</span>}
                           </div>
                           <div>
                             <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>-${exp.amount}</span>
@@ -384,30 +383,73 @@ function CreditCardManager({ session }) {
         )}
       </div>
 
-      {/* Modal / Vista de Detalle y Proyección de Meses Futuros de la Tarjeta */}
+      {/* Modal de Detalle y Registro de Meses Futuros */}
       {activeCardDetail && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '450px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '500px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <h3 style={{ margin: 0, color: '#0056b3' }}>Detalle y Futuros: {activeCardDetail.card_name}</h3>
+              <h3 style={{ margin: 0, color: '#0056b3' }}>Detalle de Tarjeta: {activeCardDetail.card_name}</h3>
               <button onClick={() => setActiveCardDetail(null)} style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
             </div>
 
             <p style={{ fontSize: '13px', color: '#555', marginBottom: '15px' }}>
-              Día de corte: <strong>{activeCardDetail.cutoff_day || 'No definido'}</strong> | Día límite de pago: <strong>{activeCardDetail.payment_due_day || 'No definido'}</strong>
+              Día de corte: <strong>{activeCardDetail.cutoff_day || 'N/A'}</strong> | Día límite de pago: <strong>{activeCardDetail.payment_due_day || 'N/A'}</strong>
             </p>
 
-            <h4 style={{ fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>Proyección de Compras a Meses (MSI) Activas:</h4>
+            {/* Formulario para registrar cargos a meses futuros (ej. Nu o BBVA proyecciones) */}
+            <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #ddd' }}>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#333' }}>Registrar Gasto o Monto para un Mes Futuro</h4>
+              <form onSubmit={handleAddProjection} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type="month" 
+                    value={projMonth}
+                    onChange={(e) => setProjMonth(e.target.value)}
+                    required
+                    style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    title="Mes al que corresponderá este estado de cuenta"
+                  />
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="Monto ($)" 
+                    value={projAmount}
+                    onChange={(e) => setProjAmount(e.target.value)}
+                    required
+                    style={{ width: '100px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+                <input 
+                  type="text" 
+                  placeholder="Descripción (ej. Compra diferida, Mensualidad X)" 
+                  value={projDesc}
+                  onChange={(e) => setProjDesc(e.target.value)}
+                  style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                />
+                <button type="submit" style={{ padding: '6px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                  + Agregar al Estado Futuro
+                </button>
+              </form>
+            </div>
+
+            {/* Listado de proyecciones futuras */}
+            <h4 style={{ fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>Cargos Registrados en Meses Futuros:</h4>
             
-            <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-              {expenses.filter(e => e.card_id === activeCardDetail.id && e.is_msi).length === 0 ? (
-                <p style={{ fontSize: '12px', color: '#666' }}>No tienes compras a meses sin intereses en esta tarjeta.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+              {projections.filter(p => p.card_id === activeCardDetail.id).length === 0 ? (
+                <p style={{ fontSize: '12px', color: '#666' }}>No hay cargos registrados para meses futuros en esta tarjeta.</p>
               ) : (
-                expenses.filter(e => e.card_id === activeCardDetail.id && e.is_msi).map(exp => (
-                  <div key={exp.id} style={{ background: '#f8f9fa', padding: '8px 10px', borderRadius: '4px', fontSize: '12px', border: '1px solid #eee' }}>
-                    <div style={{ fontWeight: 'bold', color: '#333' }}>{exp.description}</div>
-                    <div style={{ color: '#666', marginTop: '3px' }}>
-                      Mensualidad actual: <strong>${exp.monthly_installment_amount}</strong> | Vas en el mes <strong>{exp.current_installment}</strong> de <strong>{exp.total_installments}</strong>
+                projections.filter(p => p.card_id === activeCardDetail.id).map(proj => (
+                  <div key={proj.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#e8f4fd', padding: '8px 10px', borderRadius: '4px', fontSize: '12px', border: '1px solid #b8daff' }}>
+                    <div>
+                      <span style={{ background: '#004085', color: '#fff', padding: '2px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold', marginRight: '8px' }}>
+                        {proj.target_month}
+                      </span>
+                      <span>{proj.description || 'Sin descripción'}</span>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>${proj.amount}</span>
+                      <button onClick={() => handleDeleteProjection(proj.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 5px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
                     </div>
                   </div>
                 ))
