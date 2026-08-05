@@ -21,6 +21,9 @@ function App() {
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
+  // Estado para controlar qué tarjeta está expandida (ver detalles mes a mes)
+  const [expandedCardId, setExpandedCardId] = useState(null);
+
   const [salaryAmount, setSalaryAmount] = useState('');
   const [salaryFreq, setSalaryFreq] = useState('quincenal');
   const [minLiving, setMinLiving] = useState('');
@@ -28,7 +31,7 @@ function App() {
   const [incomes, setIncomes] = useState([]);
   const [incDesc, setIncDesc] = useState('');
   const [incAmount, setIncAmount] = useState('');
-  const [incMonth, setIncMonth] = useState(new Date().toISOString().slice(0, 7)); // Mes actual por defecto (ej. '2026-08')
+  const [incMonth, setIncMonth] = useState(new Date().toISOString().slice(0, 7));
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -182,7 +185,8 @@ function App() {
         {activeTab === 'dashboard' && <SmartDebtOptimizer session={session} />}
 
         {activeTab === 'cards' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            {/* Registrar Tarjeta */}
             <form onSubmit={handleAddCard} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Nueva Tarjeta</h4>
               <input type="text" placeholder="Nombre de Tarjeta (ej. Nu, BBVA)" value={cardName} onChange={(e) => setCardName(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
@@ -190,6 +194,7 @@ function App() {
               <button type="submit" style={{ padding: '8px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Agregar Tarjeta</button>
             </form>
 
+            {/* Registrar Proyección Futura */}
             <form onSubmit={handleAddProjection} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <h4 style={{ margin: 0, color: '#333' }}>Registrar Estado de Cuenta Futuro / MSI</h4>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -204,22 +209,59 @@ function App() {
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Registrar Proyección</button>
             </form>
 
+            {/* Vista de Tarjetas con Despliegue de Detalles Mes a Mes */}
             <div>
-              <h4 style={{ color: '#2c3e50' }}>Proyecciones de Tarjetas Registradas</h4>
-              {projections.length === 0 ? <p style={{ color: '#666', fontSize: '13px' }}>No hay proyecciones registradas.</p> : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {projections.map(p => (
-                    <div key={p.id} style={{ background: '#fff', padding: '10px 15px', borderRadius: '6px', border: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <strong>{p.credit_cards ? p.credit_cards.card_name : 'Tarjeta'}</strong> ({p.target_month})
-                        <div style={{ fontSize: '12px', color: '#555' }}>{p.description || 'Sin descripción'}</div>
+              <h4 style={{ color: '#2c3e50', marginBottom: '15px' }}>Tus Tarjetas (Haz clic para ver el detalle mes a mes)</h4>
+              {cards.length === 0 ? <p style={{ color: '#666', fontSize: '13px' }}>No hay tarjetas registradas.</p> : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
+                  {cards.map(card => {
+                    const cardProjections = projections.filter(p => p.card_id === card.id);
+                    const totalCardDebt = cardProjections.reduce((sum, p) => sum + Number(p.amount), 0);
+                    const isExpanded = expandedCardId === card.id;
+
+                    return (
+                      <div 
+                        key={card.id} 
+                        style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onClick={() => setExpandedCardId(isExpanded ? null : card.id)}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <h3 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '16px' }}>💳 {card.card_name}</h3>
+                            <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Día de corte/pago: {card.payment_due_day ? `Día ${card.payment_due_day}` : 'No especificado'}</p>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c0392b' }}>${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <div style={{ fontSize: '11px', color: '#888' }}>{isExpanded ? '▲ Ocultar detalle' : '▼ Ver detalle'}</div>
+                          </div>
+                        </div>
+
+                        {/* Detalle mes a mes al hacer clic */}
+                        {isExpanded && (
+                          <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '10px' }} onClick={(e) => e.stopPropagation()}>
+                            <h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '13px' }}>📅 Pagos futuros programados:</h5>
+                            {cardProjections.length === 0 ? (
+                              <p style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>No hay pagos futuros registrados para esta tarjeta.</p>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {cardProjections.map(p => (
+                                  <div key={p.id} style={{ background: '#f8f9fa', padding: '8px', borderRadius: '4px', border: '1px solid #e9ecef', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                                    <div>
+                                      <strong>{p.target_month}</strong>: {p.description || 'Sin descripción'}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <span style={{ color: '#c0392b', fontWeight: 'bold' }}>${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      <button onClick={() => handleDeleteProjection(p.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <span style={{ color: '#c0392b', fontWeight: 'bold' }}>${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        <button onClick={() => handleDeleteProjection(p.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Eliminar</button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -243,7 +285,6 @@ function App() {
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Guardar Configuración</button>
             </form>
 
-            {/* Ingreso Extra con selección de mes */}
             <form onSubmit={handleAddIncome} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Ingreso Extra (Único para un mes)</h4>
               <input type="text" placeholder="Descripción (ej. Creación de app)" value={incDesc} onChange={(e) => setIncDesc(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
