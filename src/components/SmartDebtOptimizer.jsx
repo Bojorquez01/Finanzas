@@ -7,7 +7,6 @@ function SmartDebtOptimizer({ session }) {
   const [minLiving, setMinLiving] = useState(0);
   const [totalCardsSpent, setTotalCardsSpent] = useState(0);
   const [debts, setDebts] = useState([]);
-  const [cards, setCards] = useState([]);
 
   useEffect(() => {
     if (session) calculateOptimizer();
@@ -40,7 +39,7 @@ function SmartDebtOptimizer({ session }) {
     setTotalIncome(netIncome);
     setMinLiving(minExp);
 
-    // 3. Gastos de tarjetas (mes actual + proyecciones futuras)
+    // 3. Gastos de tarjetas (mes actual + todas las proyecciones futuras registradas)
     const { data: expData } = await supabase.from('expenses').select('amount');
     const expSum = (expData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
 
@@ -50,30 +49,26 @@ function SmartDebtOptimizer({ session }) {
     const totalCardCommitment = expSum + projSum;
     setTotalCardsSpent(totalCardCommitment);
 
-    // 4. Deudas activas pendientes
+    // 4. Buscar deudas activas abarcando tanto el correo como el ID de usuario para mayor compatibilidad
+    const userEmail = session.user.email;
+    const userId = session.user.id;
+
     const { data: debtData } = await supabase
       .from('debts')
       .select('*')
-      .eq('debtor_email', session.user.email)
+      .or(`debtor_email.eq.${userEmail},debtor_id.eq.${userId}`)
       .neq('status', 'pagado');
 
     setDebts(debtData || []);
-
-    // 5. Tarjetas con sus días límite
-    const { data: cardData } = await supabase.from('credit_cards').select('*');
-    setCards(cardData || []);
-
     setDataLoaded(true);
   }
 
-  // Cálculos financieros inteligentes
   const totalDebtAmount = debts.reduce((acc, curr) => acc + Number(curr.amount), 0);
   
   // Flujo libre seguro: Ingresos menos (Mínimo Indispensable + Compromisos de Tarjetas)
   const safeAvailableCash = totalIncome - minLiving - totalCardsSpent;
 
-  // Estrategia de liquidación acelerada (Bola de Nieve / Menor a mayor saldo o distribución por fecha límite)
-  // Ordenamos las deudas de menor a mayor para sugerir liquidar las más chicas primero liberando flujo
+  // Ordenar deudas de menor a mayor para sugerir método bola de nieve
   const sortedDebts = [...debts].sort((a, b) => Number(a.amount) - Number(b.amount));
 
   return (
@@ -95,7 +90,7 @@ function SmartDebtOptimizer({ session }) {
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
           <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TARJETAS</p>
           <p style={{ margin: 0, fontSize: '18px', color: '#dc3545', fontWeight: 'bold' }}>-${fmt(totalCardsSpent)}</p>
-          <small style={{ fontSize: '10px', color: '#888' }}>Mes actual y proyecciones</small>
+          <small style={{ fontSize: '10px', color: '#888' }}>Mes actual y proyecciones futuras</small>
         </div>
 
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
@@ -123,12 +118,11 @@ function SmartDebtOptimizer({ session }) {
         ) : (
           <div>
             <p style={{ fontSize: '13px', color: '#333', marginBottom: '10px' }}>
-              Tienes un total de <strong>${fmt(totalDebtAmount)}</strong> en deudas con otras personas. Con tu excedente libre de <strong>${fmt(safeAvailableCash)}</strong>, te sugerimos la siguiente estrategia de pago por orden de prioridad (método bola de nieve para liquidar rápido las más pequeñas primero):
+              Tienes un total de <strong>${fmt(totalDebtAmount)}</strong> en deudas pendientes. Con tu excedente libre de <strong>${fmt(safeAvailableCash)}</strong>, te sugerimos la siguiente estrategia de pago por orden de prioridad:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {sortedDebts.map((debt, index) => {
-                // Sugerir asignar una porción del excedente libre a cada deuda
                 const suggestedPayment = Math.min(safeAvailableCash / sortedDebts.length, Number(debt.amount));
 
                 return (
@@ -137,7 +131,7 @@ function SmartDebtOptimizer({ session }) {
                       <span style={{ background: '#004085', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginRight: '8px' }}>
                         Prioridad #{index + 1}
                       </span>
-                      <strong>Acreedor: {debt.creditor_email}</strong> ({debt.description || 'Préstamo'})
+                      <strong>Acreedor: {debt.creditor_email || 'No especificado'}</strong> ({debt.description || 'Préstamo'})
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <span style={{ color: '#c0392b', fontWeight: 'bold' }}>Restante: ${fmt(debt.amount)}</span>
