@@ -16,6 +16,7 @@ function SmartDebtOptimizer({ session }) {
   async function runOptimizerSimulation() {
     const userEmail = session.user.email;
     const userId = session.user.id;
+    const currentMonth = new Date().toISOString().slice(0, 7); // '2026-08'
 
     // 1. Sueldo y mínimo indispensable
     const { data: salaryData } = await supabase
@@ -33,8 +34,15 @@ function SmartDebtOptimizer({ session }) {
       minExpMonthly = Number(salaryData.min_living_expense || 0);
     }
 
-    const { data: incData } = await supabase.from('incomes').select('amount');
-    const extrasSum = (incData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
+    // Ingresos extras filtrados estrictamente por el mes actual
+    const { data: incData } = await supabase
+      .from('incomes')
+      .select('amount, target_month');
+
+    const extrasSum = (incData || [])
+      .filter(inc => !inc.target_month || inc.target_month === currentMonth)
+      .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
     const totalMonthlyIncome = salaryMonthly + extrasSum;
 
     // 2. Compromisos de tarjetas
@@ -94,6 +102,7 @@ function SmartDebtOptimizer({ session }) {
     const quincenalMinLiving = minExpMonthly / 2;
     const quincenalFreeCash = quincenalIncome - quincenalMinLiving - (totalCardCommitments / 4);
 
+    setMinLiving(minExpMonthly);
     setSummaryData({
       totalDebt: validDebts.reduce((acc, curr) => acc + Number(curr.amount), 0),
       totalCards: totalCardCommitments,
@@ -154,11 +163,10 @@ function SmartDebtOptimizer({ session }) {
     setSchedule(timeline);
   }
 
-  // Función para exportar a Excel
+  // Exportar a Excel
   const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
 
-    // Hoja 1: Resumen
     const summaryRows = [
       ["Concepto", "Monto Mensual", "Monto Quincenal"],
       ["Ingresos Totales (Sueldo + Extras)", summaryData.netInc, summaryData.netInc / 2],
@@ -169,7 +177,6 @@ function SmartDebtOptimizer({ session }) {
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen Financiero");
 
-    // Hoja 2: Proyección Quincenal
     const projRows = [
       ["Quincena", "Concepto", "Descripción", "Pago Sugerido", "Saldo Restante", "Efectivo Libre Restante"]
     ];
@@ -190,7 +197,6 @@ function SmartDebtOptimizer({ session }) {
     const wsProj = XLSX.utils.aoa_to_sheet(projRows);
     XLSX.utils.book_append_sheet(wb, wsProj, "Proyección Quincenal");
 
-    // Descargar archivo
     XLSX.writeFile(wb, "plan_liquidador_deudas.xlsx");
   };
 
@@ -211,7 +217,6 @@ function SmartDebtOptimizer({ session }) {
         </button>
       </div>
 
-      {/* Indicadores */}
       <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
           <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COLCHÓN QUINCENAL</p>

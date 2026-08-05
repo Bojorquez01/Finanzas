@@ -8,11 +8,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // Estados para Login
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Estados para Tab 2 (Tarjetas y Proyecciones)
   const [cards, setCards] = useState([]);
   const [cardName, setCardName] = useState('');
   const [dueDay, setDueDay] = useState('');
@@ -23,7 +21,6 @@ function App() {
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
-  // Estados para Tab 4 (Configuración e Ingresos)
   const [salaryAmount, setSalaryAmount] = useState('');
   const [salaryFreq, setSalaryFreq] = useState('quincenal');
   const [minLiving, setMinLiving] = useState('');
@@ -31,6 +28,7 @@ function App() {
   const [incomes, setIncomes] = useState([]);
   const [incDesc, setIncDesc] = useState('');
   const [incAmount, setIncAmount] = useState('');
+  const [incMonth, setIncMonth] = useState(new Date().toISOString().slice(0, 7)); // Mes actual por defecto (ej. '2026-08')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -49,15 +47,12 @@ function App() {
   }, []);
 
   async function fetchAllData() {
-    // Cargar Tarjetas
     const { data: cData } = await supabase.from('credit_cards').select('*');
     if (cData) setCards(cData);
 
-    // Cargar Proyecciones de Tarjetas
     const { data: pData } = await supabase.from('card_statement_projections').select('*, credit_cards(card_name)');
     if (pData) setProjections(pData);
 
-    // Cargar Configuración de Sueldo
     const { data: sData } = await supabase.from('user_salary_config').select('*').maybeSingle();
     if (sData) {
       setSalaryAmount(sData.salary_amount || '');
@@ -65,7 +60,6 @@ function App() {
       setMinLiving(sData.min_living_expense || '');
     }
 
-    // Cargar Ingresos Extras
     const { data: iData } = await supabase.from('incomes').select('*');
     if (iData) setIncomes(iData);
   }
@@ -80,7 +74,6 @@ function App() {
     await supabase.auth.signOut();
   };
 
-  // Funciones para Tarjetas y Proyecciones (Tab 2)
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!cardName) return;
@@ -111,11 +104,9 @@ function App() {
     fetchAllData();
   };
 
-  // Funciones para Configuración e Ingresos (Tab 4)
   const handleSaveSalaryConfig = async (e) => {
     e.preventDefault();
     const userId = session.user.id;
-    // Verificar si ya existe config
     const { data: existing } = await supabase.from('user_salary_config').select('id').eq('user_id', userId).maybeSingle();
 
     if (existing) {
@@ -138,8 +129,13 @@ function App() {
 
   const handleAddIncome = async (e) => {
     e.preventDefault();
-    if (!incDesc || !incAmount) return;
-    await supabase.from('incomes').insert([{ description: incDesc, amount: parseFloat(incAmount), user_id: session.user.id }]);
+    if (!incDesc || !incAmount || !incMonth) return;
+    await supabase.from('incomes').insert([{ 
+      description: incDesc, 
+      amount: parseFloat(incAmount), 
+      target_month: incMonth,
+      user_id: session.user.id 
+    }]);
     setIncDesc('');
     setIncAmount('');
     fetchAllData();
@@ -167,7 +163,6 @@ function App() {
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      {/* Cabecera */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #eee', paddingBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
         <h2 style={{ margin: 0, color: '#2c3e50' }}>Gestión Financiera Personal</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -176,7 +171,6 @@ function App() {
         </div>
       </div>
 
-      {/* Pestañas de Navegación */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid #ddd', paddingBottom: '10px', flexWrap: 'wrap' }}>
         <button onClick={() => setActiveTab('dashboard')} style={{ padding: '9px 16px', background: activeTab === 'dashboard' ? '#007bff' : '#f8f9fa', color: activeTab === 'dashboard' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>📊 Dashboard & Optimizador</button>
         <button onClick={() => setActiveTab('cards')} style={{ padding: '9px 16px', background: activeTab === 'cards' ? '#007bff' : '#f8f9fa', color: activeTab === 'cards' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>💳 Tarjetas y Proyecciones</button>
@@ -184,13 +178,11 @@ function App() {
         <button onClick={() => setActiveTab('config')} style={{ padding: '9px 16px', background: activeTab === 'config' ? '#007bff' : '#f8f9fa', color: activeTab === 'config' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>⚙️ Ingresos y Configuración</button>
       </div>
 
-      {/* Contenido de Pestañas */}
       <div>
         {activeTab === 'dashboard' && <SmartDebtOptimizer session={session} />}
 
         {activeTab === 'cards' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Registrar Tarjeta */}
             <form onSubmit={handleAddCard} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Nueva Tarjeta</h4>
               <input type="text" placeholder="Nombre de Tarjeta (ej. Nu, BBVA)" value={cardName} onChange={(e) => setCardName(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
@@ -198,7 +190,6 @@ function App() {
               <button type="submit" style={{ padding: '8px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Agregar Tarjeta</button>
             </form>
 
-            {/* Registrar Proyección Futura */}
             <form onSubmit={handleAddProjection} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <h4 style={{ margin: 0, color: '#333' }}>Registrar Estado de Cuenta Futuro / MSI</h4>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -213,7 +204,6 @@ function App() {
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Registrar Proyección</button>
             </form>
 
-            {/* Listado de Proyecciones */}
             <div>
               <h4 style={{ color: '#2c3e50' }}>Proyecciones de Tarjetas Registradas</h4>
               {projections.length === 0 ? <p style={{ color: '#666', fontSize: '13px' }}>No hay proyecciones registradas.</p> : (
@@ -240,7 +230,6 @@ function App() {
 
         {activeTab === 'config' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            {/* Configurar Sueldo y Colchón */}
             <form onSubmit={handleSaveSalaryConfig} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <h4 style={{ margin: 0, color: '#333' }}>Configuración de Sueldo y Supervivencia</h4>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -254,22 +243,24 @@ function App() {
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Guardar Configuración</button>
             </form>
 
-            {/* Ingresos Extras */}
+            {/* Ingreso Extra con selección de mes */}
             <form onSubmit={handleAddIncome} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Ingreso Extra</h4>
-              <input type="text" placeholder="Descripción (ej. Venta, Freelance)" value={incDesc} onChange={(e) => setIncDesc(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Ingreso Extra (Único para un mes)</h4>
+              <input type="text" placeholder="Descripción (ej. Creación de app)" value={incDesc} onChange={(e) => setIncDesc(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              <input type="month" value={incMonth} onChange={(e) => setIncMonth(e.target.value)} required style={{ width: '150px', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
               <input type="number" step="0.01" placeholder="Monto ($)" value={incAmount} onChange={(e) => setIncAmount(e.target.value)} required style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
-              <button type="submit" style={{ padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Agregar Ingreso</button>
+              <button type="submit" style={{ padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Agregar</button>
             </form>
 
-            {/* Listado de Ingresos Extras */}
             <div>
               <h4 style={{ color: '#2c3e50' }}>Ingresos Extras Registrados</h4>
               {incomes.length === 0 ? <p style={{ color: '#666', fontSize: '13px' }}>No hay ingresos extras registrados.</p> : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {incomes.map(i => (
                     <div key={i.id} style={{ background: '#fff', padding: '10px 15px', borderRadius: '6px', border: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>{i.description}</span>
+                      <div>
+                        <strong>{i.description}</strong> ({i.target_month || 'Sin mes'})
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                         <span style={{ color: '#27ae60', fontWeight: 'bold' }}>+${Number(i.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         <button onClick={() => handleDeleteIncome(i.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Eliminar</button>
