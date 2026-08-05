@@ -161,12 +161,12 @@ function App() {
     
     const targetMonth = `${projYear}-${projMonthNum}`;
 
+    // Corregido: se remueve user_id ya que la tabla no lo requiere ni lo tiene
     const { error } = await supabase.from('card_statement_projections').insert([{
       card_id: projCardId,
       target_month: targetMonth,
       amount: parseFloat(projAmount),
-      description: projDesc,
-      user_id: session.user.id
+      description: projDesc
     }]);
 
     if (error) {
