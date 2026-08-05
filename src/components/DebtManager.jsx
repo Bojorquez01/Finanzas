@@ -21,12 +21,12 @@ function DebtManager({ session }) {
 
   async function fetchDebts() {
     const userEmail = session.user.email;
+    const userId = session.user.id;
 
-    // Consultamos todas las deudas donde tu correo esté involucrado como deudor o acreedor
     const { data, error } = await supabase
       .from('debts')
       .select('*')
-      .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail}`);
+      .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail},debtor_id.eq.${userId}`);
 
     if (!error) setDebts(data || []);
   }
@@ -48,6 +48,7 @@ function DebtManager({ session }) {
       .insert([{
         debtor_email: debtorEmail,
         creditor_email: creditorEmail,
+        debtor_id: relationType === 'yo_debo' ? session.user.id : null,
         amount: totalAmt,
         total_months: months,
         monthly_payment: monthlyPay,
@@ -118,14 +119,18 @@ function DebtManager({ session }) {
   };
 
   const userEmail = session.user.email;
+  const userId = session.user.id;
   
-  // Filtros limpios basados estrictamente en correos electrónicos (ignorando ID de creador)
+  // Filtros robustos: Separan perfectamente lo que debes de lo que te deben
   const myDebtsAsDebtor = debts.filter(d => 
-    d.debtor_email === userEmail || (!d.debtor_email && d.creditor_email !== userEmail)
+    d.debtor_email === userEmail || 
+    (d.debtor_id === userId && d.creditor_email !== userEmail)
   );
 
   const myDebtsAsCreditor = debts.filter(d => 
-    d.creditor_email === userEmail && d.debtor_email !== userEmail && d.debtor_email !== null
+    d.creditor_email === userEmail && 
+    d.debtor_email && 
+    d.debtor_email !== userEmail
   );
 
   return (
