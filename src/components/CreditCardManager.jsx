@@ -178,7 +178,6 @@ function CreditCardManager({ session }) {
     if (!error) fetchData();
   };
 
-  // Día actual del mes para verificar si el estado de cuenta ya está listo
   const currentDayOfMonth = new Date().getDate();
 
   return (
@@ -322,17 +321,21 @@ function CreditCardManager({ session }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {cards.map(card => {
               const cardExpenses = expenses.filter(exp => exp.card_id === card.id);
-              const totalCardSpent = cardExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
-              const availableCredit = card.credit_limit > 0 ? card.credit_limit - totalCardSpent : null;
+              const currentMonthSpent = cardExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+              // Sumar también las proyecciones de meses futuros para el total comprometido de la tarjeta
+              const cardProjections = projections.filter(p => p.card_id === card.id);
+              const futureProjectionsTotal = cardProjections.reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+              const totalCardCommitted = currentMonthSpent + futureProjectionsTotal;
+              const availableCredit = card.credit_limit > 0 ? card.credit_limit - totalCardCommitted : null;
               
-              // Ver si el estado de cuenta ya está listo (si hoy el día actual >= día de corte)
               const isStatementReady = card.cutoff_day && currentDayOfMonth >= card.cutoff_day;
               const isEditing = editingCardId === card.id;
 
               return (
                 <div key={card.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px' }}>
                   
-                  {/* Alerta de Estado de Cuenta Listo */}
                   {isStatementReady && (
                     <div style={{ background: '#d4edda', color: '#155724', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       📢 ¡Tu estado de cuenta ya se puede consultar en la app de tu banco! (Día de corte: {card.cutoff_day})
@@ -370,7 +373,12 @@ function CreditCardManager({ session }) {
                         >
                           👁️ Ver Detalle y Meses Futuros
                         </button>
-                        <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Consumido: ${fmt(totalCardSpent)}</span>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Comprometido: ${fmt(totalCardCommitted)}</span>
+                          <div style={{ fontSize: '10px', color: '#666' }}>
+                            (Mes actual: ${fmt(currentMonthSpent)} | Futuros: ${fmt(futureProjectionsTotal)})
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -403,7 +411,7 @@ function CreditCardManager({ session }) {
         )}
       </div>
 
-      {/* Modal de Detalle y Meses Futuros con formato */}
+      {/* Modal de Detalle y Meses Futuros */}
       {activeCardDetail && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '500px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
