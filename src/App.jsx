@@ -13,11 +13,13 @@ function App() {
 
   const [cards, setCards] = useState([]);
   const [cardName, setCardName] = useState('');
+  const [cutoffDay, setCutoffDay] = useState('');
   const [dueDay, setDueDay] = useState('');
   
-  // Estados para edición de tarjeta
+  // Estados para edición detallada de tarjeta
   const [editingCardId, setEditingCardId] = useState(null);
   const [editName, setEditName] = useState('');
+  const [editCutoffDay, setEditCutoffDay] = useState('');
   const [editDueDay, setEditDueDay] = useState('');
 
   const [projections, setProjections] = useState([]);
@@ -37,7 +39,6 @@ function App() {
   const [incAmount, setIncAmount] = useState('');
   const [incMonth, setIncMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // Función para formatear fechas tipo "2026-09" a "Septiembre 2026"
   const formatMonthName = (dateStr) => {
     if (!dateStr) return '';
     const [year, month] = dateStr.split('-');
@@ -95,17 +96,23 @@ function App() {
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!cardName) return;
-    await supabase.from('credit_cards').insert([{ card_name: cardName, payment_due_day: dueDay ? parseInt(dueDay) : null, user_id: session.user.id }]);
+    await supabase.from('credit_cards').insert([{ 
+      card_name: cardName, 
+      cutoff_day: cutoffDay ? parseInt(cutoffDay) : null,
+      payment_due_day: dueDay ? parseInt(dueDay) : null, 
+      user_id: session.user.id 
+    }]);
     setCardName('');
+    setCutoffDay('');
     setDueDay('');
     fetchAllData();
   };
 
-  // Funciones de Edición y Eliminación de Tarjetas
   const startEditingCard = (card, e) => {
     e.stopPropagation();
     setEditingCardId(card.id);
     setEditName(card.card_name);
+    setEditCutoffDay(card.cutoff_day || '');
     setEditDueDay(card.payment_due_day || '');
   };
 
@@ -114,15 +121,21 @@ function App() {
     if (!editName) return;
     await supabase.from('credit_cards').update({
       card_name: editName,
+      cutoff_day: editCutoffDay ? parseInt(editCutoffDay) : null,
       payment_due_day: editDueDay ? parseInt(editDueDay) : null
     }).eq('id', cardId);
     setEditingCardId(null);
     fetchAllData();
   };
 
-  const handleDeleteCard = async (cardId, e) => {
+  // Validación para impedir borrado si tiene pagos/deudas pendientes
+  const handleDeleteCard = async (cardId, cardProjections, e) => {
     e.stopPropagation();
-    if (!confirm('¿Estás seguro de eliminar esta tarjeta y sus proyecciones asociadas?')) return;
+    if (cardProjections && cardProjections.length > 0) {
+      alert('⚠️ No se puede eliminar esta tarjeta porque tiene pagos o deudas programadas pendientes. Debes eliminar sus pagos futuros primero.');
+      return;
+    }
+    if (!confirm('¿Estás seguro de eliminar esta tarjeta?')) return;
     await supabase.from('credit_cards').delete().eq('id', cardId);
     fetchAllData();
   };
@@ -229,8 +242,9 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <form onSubmit={handleAddCard} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Nueva Tarjeta</h4>
-              <input type="text" placeholder="Nombre de Tarjeta (ej. Nu, BBVA)" value={cardName} onChange={(e) => setCardName(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
-              <input type="number" placeholder="Día de corte/pago" value={dueDay} onChange={(e) => setDueDay(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              <input type="text" placeholder="Nombre (ej. Nu, BBVA)" value={cardName} onChange={(e) => setCardName(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              <input type="number" placeholder="Día de corte" value={cutoffDay} onChange={(e) => setCutoffDay(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              <input type="number" placeholder="Día de pago" value={dueDay} onChange={(e) => setDueDay(e.target.value)} style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
               <button type="submit" style={{ padding: '8px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Agregar Tarjeta</button>
             </form>
 
@@ -265,25 +279,45 @@ function App() {
                         onClick={() => !isEditing && setExpandedCardId(isExpanded ? null : card.id)}
                       >
                         {isEditing ? (
-                          /* Modo Edición */
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
-                            <h4 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '15px' }}>Editar Tarjeta</h4>
-                            <input 
-                              type="text" 
-                              value={editName} 
-                              onChange={(e) => setEditName(e.target.value)} 
-                              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }} 
-                              placeholder="Nombre de tarjeta"
-                            />
-                            <input 
-                              type="number" 
-                              value={editDueDay} 
-                              onChange={(e) => setEditDueDay(e.target.value)} 
-                              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }} 
-                              placeholder="Día de corte/pago"
-                            />
+                          /* Modo Edición Limpio y Etiquetado */
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
+                            <h4 style={{ margin: '0 0 2px 0', color: '#004085', fontSize: '15px' }}>✏️ Editar Tarjeta</h4>
+                            
+                            <div>
+                              <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Nombre de Tarjeta</label>
+                              <input 
+                                type="text" 
+                                value={editName} 
+                                onChange={(e) => setEditName(e.target.value)} 
+                                style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', boxSizing: 'border-box' }} 
+                              />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Día de Corte</label>
+                                <input 
+                                  type="number" 
+                                  value={editCutoffDay} 
+                                  onChange={(e) => setEditCutoffDay(e.target.value)} 
+                                  style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', boxSizing: 'border-box' }} 
+                                  placeholder="Ej. 18"
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Día de Pago</label>
+                                <input 
+                                  type="number" 
+                                  value={editDueDay} 
+                                  onChange={(e) => setEditDueDay(e.target.value)} 
+                                  style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', boxSizing: 'border-box' }} 
+                                  placeholder="Ej. 5"
+                                />
+                              </div>
+                            </div>
+
                             <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
-                              <button onClick={(e) => handleUpdateCard(card.id, e)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Guardar</button>
+                              <button onClick={(e) => handleUpdateCard(card.id, e)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Guardar Cambios</button>
                               <button onClick={(e) => { e.stopPropagation(); setEditingCardId(null); }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Cancelar</button>
                             </div>
                           </div>
@@ -293,7 +327,9 @@ function App() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <div>
                                 <h3 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '16px' }}>💳 {card.card_name}</h3>
-                                <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Día de corte/pago: {card.payment_due_day ? `Día ${card.payment_due_day}` : 'No especificado'}</p>
+                                <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>
+                                  {card.cutoff_day ? `Corte: Día ${card.cutoff_day}` : 'Corte: N/A'} | {card.payment_due_day ? `Pago: Día ${card.payment_due_day}` : 'Pago: N/A'}
+                                </p>
                               </div>
                               <div style={{ textAlign: 'right' }}>
                                 <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c0392b' }}>${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -303,8 +339,8 @@ function App() {
 
                             {/* Botones de acción rápidos */}
                             <div style={{ display: 'flex', gap: '10px', marginTop: '12px', borderTop: '1px solid #f1f1f1', paddingTop: '8px' }} onClick={(e) => e.stopPropagation()}>
-                              <button onClick={(e) => startEditingCard(card, e)} style={{ background: '#ffc107', color: '#333', border: 'none', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>✏️ Editar</button>
-                              <button onClick={(e) => handleDeleteCard(card.id, e)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>🗑️ Eliminar</button>
+                              <button onClick={(e) => startEditingCard(card, e)} style={{ background: '#ffc107', color: '#333', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>✏️ Editar</button>
+                              <button onClick={(e) => handleDeleteCard(card.id, cardProjections, e)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>🗑️ Eliminar</button>
                             </div>
                           </>
                         )}
