@@ -3,21 +3,20 @@ import { supabase } from '../supabaseClient';
 
 function SmartDebtOptimizer({ session }) {
   const [minLiving, setMinLiving] = useState(0);
-  const [totalCardsSpent, setTotalCardsSpent] = useState(0);
-  const [groupedItems, setGroupedItems] = useState([]);
-  const [netInc, setNetInc] = useState(0);
+  const [schedule, setSchedule] = useState([]);
+  const [summaryData, setSummaryData] = useState({ totalDebt: 0, totalCards: 0, netInc: 0, safeCashQ: 0 });
 
   useEffect(() => {
-    if (session) calculateOptimizer();
+    if (session) runOptimizerSimulation();
   }, [session]);
 
   const fmt = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  async function calculateOptimizer() {
+  async function runOptimizerSimulation() {
     const userEmail = session.user.email;
     const userId = session.user.id;
 
-    // 1. Sueldo y mínimo indispensable
+    // 1. Sueldo y mínimo indispensable mensual
     const { data: salaryData } = await supabase
       .from('user_salary_config')
       .select('*')
@@ -25,33 +24,31 @@ function SmartDebtOptimizer({ session }) {
       .maybeSingle();
 
     let salaryMonthly = 0;
-    let minExp = 0;
+    let minExpMonthly = 0;
     if (salaryData) {
       salaryMonthly = salaryData.frequency === 'quincenal' 
         ? Number(salaryData.salary_amount) * 2 
         : Number(salaryData.salary_amount);
-      minExp = Number(salaryData.min_living_expense || 0);
+      minExpMonthly = Number(salaryData.min_living_expense || 0);
     }
 
     const { data: incData } = await supabase.from('incomes').select('amount');
     const extrasSum = (incData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
-    setNetInc(salaryMonthly + extrasSum);
-    setMinLiving(minExp);
+    const totalMonthlyIncome = salaryMonthly + extrasSum;
 
-    // 2. Gastos de tarjetas (mes actual)
+    // 2. Compromisos de tarjetas (Gastos + Proyecciones)
     const { data: expData } = await supabase.from('expenses').select('amount');
     const expSum = (expData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
 
-    // 3. Proyecciones futuras de tarjetas
     const { data: projData } = await supabase
       .from('card_statement_projections')
-      .select('*, credit_cards(card_name)')
+      .select('*, credit_cards(card_name, payment_due_day)')
       .order('target_month', { ascending: true });
 
     const projSum = (projData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
-    setTotalCardsSpent(expSum + projSum);
+    const totalCardCommitments = expSum + projSum;
 
-    // 4. Deudas personales
+    // 3. Deudas personales
     const { data: debtData } = await supabase
       .from('debts')
       .select('*')
@@ -63,139 +60,184 @@ function SmartDebtOptimizer({ session }) {
       (d.debtor_id === userId && d.creditor_email !== userEmail)
     );
 
-    // 5. Mapear deudas personales
-    const formattedPersonalDebts = validDebts.map(d => ({
-      id: `debt_${d.id}`,
-      realId: d.id,
-      type: 'personal_debt',
-      name: `Deuda con: ${d.creditor_email}`,
-      subtitle: d.description || 'Préstamo personal',
-      amount: Number(d.amount),
-      priority: d.priority || 2,
-    }));
+    // Consolidar deudas y tarjetas en una lista con prioridad
+    let itemsToPay = [];
 
-    // 6. Agrupar proyecciones de tarjetas por tarjeta (para no mostrar mes por mes)
+    validDebts.forEach(d => {
+      itemsToPay.push({
+        id: `debt_${d.id}`,
+        name: `Deuda: ${d.creditor_email}`,
+        description: d.description || 'Préstamo personal',
+        balance: Number(d.amount),
+        priority: d.priority || 2,
+      });
+    });
+
+    // Agrupar proyecciones de tarjetas
     const cardMap = {};
     (projData || []).forEach(p => {
       const cardName = p.credit_cards ? p.credit_cards.card_name : 'Tarjeta';
       if (!cardMap[cardName]) {
         cardMap[cardName] = {
-          id: `card_group_${cardName}`,
-          realId: p.id,
-          type: 'card_group',
+          id: `card_${cardName}`,
           name: `Tarjeta: ${cardName}`,
-          subtitle: 'Acumulado de mensualidades / MSI futuras',
-          amount: 0,
-          priority: p.priority || 2,
+          description: 'Acumulado de mensualidades / MSI',
+          balance: 0,
+          priority: 2,
         };
       }
-      cardMap[cardName].amount += Number(p.amount);
+      cardMap[cardName].balance += Number(p.amount);
     });
 
-    const formattedCardGroups = Object.values(cardMap);
+    Object.values(cardMap).forEach(c => itemsToPay.push(c));
 
-    setGroupedItems([...formattedPersonalDebts, ...formattedCardGroups]);
-  }
+    // Cálculos por quincena
+    const quincenalIncome = totalMonthlyIncome / 2;
+    const quincenalMinLiving = minExpMonthly / 2;
+    // Excedente libre real por quincena (descontando supervivencia y reparto de tarjetas)
+    const quincenalFreeCash = quincenalIncome - quincenalMinLiving - (totalCardCommitments / 4);
 
-  const handleChangePriority = async (item) => {
-    const nextPriority = item.priority >= 3 ? 1 : item.priority + 1;
+    setSummaryData({
+      totalDebt: validDebts.reduce((acc, curr) => acc + Number(curr.amount), 0),
+      totalCards: totalCardCommitments,
+      netInc: totalMonthlyIncome,
+      safeCashQ: quincenalFreeCash > 0 ? quincenalFreeCash : 0
+    });
 
-    if (item.type === 'personal_debt') {
-      await supabase.from('debts').update({ priority: nextPriority }).eq('id', item.realId);
-    } else {
-      // Si es grupo de tarjeta, actualizamos las proyecciones asociadas
-      await supabase.from('card_statement_projections').update({ priority: nextPriority }).eq('card_id', item.realId);
+    // 4. Motor de Simulación Quincenal (Simula hasta 12 quincenas o hasta saldar todo)
+    let simulatedItems = itemsToPay.map(i => ({ ...i }));
+    let timeline = [];
+    let qIndex = 1;
+
+    while (simulatedItems.some(i => i.balance > 1) && qIndex <= 10) {
+      let availableCashForDebts = quincenalFreeCash > 0 ? quincenalFreeCash : 0;
+      
+      // Ordenar por prioridad (1: Alta, 2: Media, 3: Baja) y luego por menor monto (bola de nieve)
+      simulatedItems.sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return a.balance - b.balance;
+      });
+
+      let quincenaPayments = [];
+
+      for (let item of simulatedItems) {
+        if (item.balance <= 0) continue;
+
+        if (availableCashForDebts <= 0) {
+          // Ya no queda dinero libre en esta quincena para más abonos
+          quincenaPayments.push({
+            name: item.name,
+            description: item.description,
+            paid: 0,
+            remaining: item.balance
+          });
+          continue;
+        }
+
+        // Cuánto podemos abonar a este ítem en esta quincena
+        let payment = Math.min(availableCashForDebts, item.balance);
+        item.balance -= payment;
+        availableCashForDebts -= payment;
+
+        quincenaPayments.push({
+          name: item.name,
+          description: item.description,
+          paid: payment,
+          remaining: item.balance
+        });
+      }
+
+      timeline.push({
+        quincenaNum: qIndex,
+        label: `Quincena ${qIndex} (Mes ${Math.ceil(qIndex / 2)})`,
+        payments: quincenaPayments,
+        leftoverCash: availableCashForDebts
+      });
+
+      qIndex++;
     }
 
-    calculateOptimizer();
-  };
-
-  const safeAvailableCash = netInc - minLiving - totalCardsSpent;
-
-  // Ordenar por prioridad y monto
-  const sortedItems = [...groupedItems].sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return b.amount - a.amount;
-  });
-
-  const getPriorityBadge = (p) => {
-    if (p === 1) return { label: '🔴 Alta', bg: '#f8d7da', color: '#721c24' };
-    if (p === 2) return { label: '🟡 Media', bg: '#fff3cd', color: '#856404' };
-    return { label: '🟢 Baja', bg: '#d4edda', color: '#155724' };
-  };
+    setSchedule(timeline);
+  }
 
   return (
     <div style={{ background: '#e8f4fd', border: '1px solid #b8daff', padding: '20px', borderRadius: '8px', marginBottom: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '18px' }}>🛡️ Optimizador y Red de Seguridad Financiera</h3>
       <p style={{ fontSize: '13px', color: '#0056b3', marginBottom: '15px' }}>
-        Vista limpia y consolidada de tus compromisos de tarjetas y deudas personales organizados por prioridad.
+        Planificador inteligente que calcula tus pagos quincena tras quincena respetando tu colchón de supervivencia y tus prioridades.
       </p>
 
       {/* Indicadores */}
       <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '20px' }}>
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COLCHÓN INTOCABLE (SUPERVIVENCIA)</p>
-          <p style={{ margin: 0, fontSize: '18px', color: '#c0392b', fontWeight: 'bold' }}>${fmt(minLiving)}</p>
+          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COLCHÓN QUINCENAL (SUPERVIVENCIA)</p>
+          <p style={{ margin: 0, fontSize: '18px', color: '#c0392b', fontWeight: 'bold' }}>${fmt(minLiving / 2)}</p>
+          <small style={{ fontSize: '10px', color: '#888' }}>Mitad del mínimo mensual intocable</small>
         </div>
 
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TOTALES</p>
-          <p style={{ margin: 0, fontSize: '18px', color: '#dc3545', fontWeight: 'bold' }}>-${fmt(totalCardsSpent)}</p>
+          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TOTALES TARJETAS</p>
+          <p style={{ margin: 0, fontSize: '18px', color: '#dc3545', fontWeight: 'bold' }}>-${fmt(summaryData.totalCards)}</p>
         </div>
 
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>EXCEDENTE LIBRE</p>
-          <p style={{ margin: 0, fontSize: '18px', color: safeAvailableCash >= 0 ? '#27ae60' : '#c0392b', fontWeight: 'bold' }}>
-            ${fmt(safeAvailableCash)}
+          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>EXCEDENTE LIBRE QUINCENAL</p>
+          <p style={{ margin: 0, fontSize: '18px', color: summaryData.safeCashQ >= 0 ? '#27ae60' : '#c0392b', fontWeight: 'bold' }}>
+            ${fmt(summaryData.safeCashQ)}
           </p>
+          <small style={{ fontSize: '10px', color: '#888' }}>Disponible por quincena para abonos</small>
         </div>
       </div>
 
-      {/* Plan Consolidado por Mes y Quincena */}
+      {/* Tabla de Proyección de Pagos Quincenales */}
       <div style={{ background: '#fff', padding: '15px', borderRadius: '6px', border: '1px solid #b8daff' }}>
-        <h4 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '15px' }}>💡 Plan de Liquidación Consolidado</h4>
+        <h4 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '15px' }}>📅 Tabla de Proyección y Pagos por Quincena</h4>
         
-        {sortedItems.length === 0 ? (
+        {schedule.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#27ae60', fontWeight: 'bold' }}>
-            🎉 ¡Felicidades! No tienes compromisos ni deudas pendientes registradas.
+            🎉 ¡Felicidades! No tienes deudas ni compromisos pendientes por cubrir.
           </p>
         ) : (
-          <div>
-            <p style={{ fontSize: '13px', color: '#333', marginBottom: '10px' }}>
-              Resumen general de pagos agrupados por tarjeta y deuda. El excedente libre se distribuye de manera sugerida:
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <p style={{ fontSize: '12px', color: '#555', margin: 0 }}>
+              A continuación se muestra la recomendación paso a paso de cómo se irán liquidando tus deudas y tarjetas quincena tras quincena con tu excedente libre:
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {sortedItems.map((item) => {
-                const badge = getPriorityBadge(item.priority);
-                const suggestedPayment = Math.min(safeAvailableCash / sortedItems.length, item.amount);
+            {schedule.map((q) => (
+              <div key={q.quincenaNum} style={{ background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '6px', padding: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '6px', marginBottom: '8px' }}>
+                  <strong style={{ color: '#004085', fontSize: '14px' }}>{q.label}</strong>
+                  <span style={{ fontSize: '12px', color: '#666' }}>Efectivo libre restante tras abonos: <strong>${fmt(q.leftoverCash)}</strong></span>
+                </div>
 
-                return (
-                  <div key={item.id} style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', border: '1px solid #ddd', flexWrap: 'wrap', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <button 
-                        onClick={() => handleChangePriority(item)}
-                        style={{ background: badge.bg, color: badge.color, border: '1px solid #ccc', padding: '5px 9px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                        title="Haz clic para cambiar prioridad"
-                      >
-                        {badge.label} 🔄
-                      </button>
-                      <div>
-                        <strong style={{ fontSize: '14px', color: '#2c3e50' }}>{item.name}</strong>
-                        <div style={{ color: '#555', fontSize: '12px' }}>{item.subtitle}</div>
-                      </div>
-                    </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <span style={{ color: '#c0392b', fontWeight: 'bold', fontSize: '14px' }}>Total: ${fmt(item.amount)}</span>
-                      <div style={{ color: '#27ae60', fontSize: '12px', fontWeight: 'bold', marginTop: '2px' }}>
-                        💡 Sugerencia de abono: ${fmt(safeAvailableCash > 0 ? suggestedPayment : 0)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: '#e9ecef', color: '#333' }}>
+                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc' }}>Concepto</th>
+                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc' }}>Descripción</th>
+                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc', textAlign: 'right' }}>Pago Sugerido</th>
+                        <th style={{ padding: '6px', borderBottom: '1px solid #ccc', textAlign: 'right' }}>Saldo Restante</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {q.payments.map((p, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+                          <td style={{ padding: '6px', fontWeight: 'bold', color: '#2c3e50' }}>{p.name}</td>
+                          <td style={{ padding: '6px', color: '#555' }}>{p.description}</td>
+                          <td style={{ padding: '6px', textAlign: 'right', color: p.paid > 0 ? '#27ae60' : '#888', fontWeight: 'bold' }}>
+                            ${fmt(p.paid)}
+                          </td>
+                          <td style={{ padding: '6px', textAlign: 'right', color: '#c0392b', fontWeight: 'bold' }}>
+                            ${fmt(p.remaining)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
