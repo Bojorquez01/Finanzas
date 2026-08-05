@@ -3,10 +3,9 @@ import { supabase } from '../supabaseClient';
 
 function IncomeManager({ session }) {
   const [incomes, setIncomes] = useState([]);
-  const [salaryConfig, setSalaryConfig] = useState({ salary_amount: '', frequency: 'quincenal' });
+  const [salaryConfig, setSalaryConfig] = useState({ salary_amount: '', frequency: 'quincenal', min_living_expense: '' });
   const [isEditingSalary, setIsEditingSalary] = useState(false);
 
-  // Estados para ingresos extras
   const [source, setSource] = useState('');
   const [amount, setAmount] = useState('');
 
@@ -14,8 +13,9 @@ function IncomeManager({ session }) {
     fetchData();
   }, [session]);
 
+  const fmt = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   async function fetchData() {
-    // 1. Cargar configuración de sueldo fijo
     const { data: salaryData } = await supabase
       .from('user_salary_config')
       .select('*')
@@ -25,10 +25,9 @@ function IncomeManager({ session }) {
     if (salaryData) {
       setSalaryConfig(salaryData);
     } else {
-      setIsEditingSalary(true); // Si no tiene sueldo configurado, abrimos para configurarlo
+      setIsEditingSalary(true);
     }
 
-    // 2. Cargar ingresos extras
     const { data: incData } = await supabase
       .from('incomes')
       .select('*')
@@ -37,13 +36,12 @@ function IncomeManager({ session }) {
     if (incData) setIncomes(incData || []);
   }
 
-  // Guardar o actualizar sueldo fijo
   const handleSaveSalary = async (e) => {
     e.preventDefault();
     const amt = parseFloat(salaryConfig.salary_amount);
+    const minExp = parseFloat(salaryConfig.min_living_expense) || 0;
     if (isNaN(amt)) return;
 
-    // Verificar si ya existe registro
     const { data: existing } = await supabase
       .from('user_salary_config')
       .select('id')
@@ -53,19 +51,26 @@ function IncomeManager({ session }) {
     if (existing) {
       await supabase
         .from('user_salary_config')
-        .update({ salary_amount: amt, frequency: salaryConfig.frequency })
+        .update({ 
+          salary_amount: amt, 
+          frequency: salaryConfig.frequency,
+          min_living_expense: minExp
+        })
         .eq('user_id', session.user.id);
     } else {
       await supabase
         .from('user_salary_config')
-        .insert([{ salary_amount: amt, frequency: salaryConfig.frequency }]);
+        .insert([{ 
+          salary_amount: amt, 
+          frequency: salaryConfig.frequency,
+          min_living_expense: minExp
+        }]);
     }
 
     setIsEditingSalary(false);
     fetchData();
   };
 
-  // Agregar ingreso extra
   const handleAddExtraIncome = async (e) => {
     e.preventDefault();
     if (!source || !amount) return;
@@ -86,29 +91,25 @@ function IncomeManager({ session }) {
     if (!error) fetchData();
   };
 
-  // Calcular equivalente mensual para el dashboard si es quincenal (multiplicar x2) o mensual
-  const monthlySalaryBase = salaryConfig.frequency === 'quincenal' 
-    ? Number(salaryConfig.salary_amount || 0) * 2 
-    : Number(salaryConfig.salary_amount || 0);
-
-  const totalExtras = incomes.reduce((acc, curr) => acc + Number(curr.amount), 0);
-
   return (
     <div style={{ marginTop: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>
-        Control de Ingresos
+        Control de Ingresos y Presupuesto Base
       </h3>
 
-      {/* Tarjeta de Sueldo Fijo Recurrente */}
+      {/* Tarjeta de Sueldo y Mínimo Indispensable */}
       <div style={{ background: '#f1f8e9', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #c8e6c9' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h4 style={{ margin: '0 0 5px 0', color: '#2e7d32', fontSize: '15px' }}>Sueldo Fijo Principal</h4>
+            <h4 style={{ margin: '0 0 5px 0', color: '#2e7d32', fontSize: '15px' }}>Sueldo Fijo y Colchón de Supervivencia</h4>
             <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
               {salaryConfig.salary_amount ? (
-                <>Configurado como: <strong>${salaryConfig.salary_amount} ({salaryConfig.frequency})</strong></>
+                <>
+                  Sueldo: <strong>${fmt(salaryConfig.salary_amount)} ({salaryConfig.frequency})</strong> | 
+                  Mínimo Indispensable (Comida/Salud): <strong style={{ color: '#c0392b' }}>${fmt(salaryConfig.min_living_expense)}</strong>
+                </>
               ) : (
-                'Aún no has configurado tu sueldo fijo.'
+                'Configura tu sueldo y tu mínimo indispensable intocable.'
               )}
             </p>
           </div>
@@ -116,7 +117,7 @@ function IncomeManager({ session }) {
             onClick={() => setIsEditingSalary(!isEditingSalary)}
             style={{ background: '#388e3c', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
           >
-            {isEditingSalary ? 'Cancelar' : (salaryConfig.salary_amount ? 'Editar Sueldo / Cambiar Empleo' : 'Configurar Sueldo')}
+            {isEditingSalary ? 'Cancelar' : 'Configurar Sueldo y Gastos Básicos'}
           </button>
         </div>
 
@@ -125,7 +126,7 @@ function IncomeManager({ session }) {
             <input 
               type="number" 
               step="0.01" 
-              placeholder="Monto ($)" 
+              placeholder="Sueldo monto ($)" 
               value={salaryConfig.salary_amount}
               onChange={(e) => setSalaryConfig({ ...salaryConfig, salary_amount: e.target.value })}
               required
@@ -139,19 +140,28 @@ function IncomeManager({ session }) {
               <option value="quincenal">Quincenal</option>
               <option value="mensual">Mensual</option>
             </select>
+            <input 
+              type="number" 
+              step="0.01" 
+              placeholder="Mínimo indispensable mensual (Comida, salud) $" 
+              value={salaryConfig.min_living_expense}
+              onChange={(e) => setSalaryConfig({ ...salaryConfig, min_living_expense: e.target.value })}
+              required
+              style={{ flex: 2, padding: '7px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
             <button type="submit" style={{ padding: '7px 14px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
-              Guardar Sueldo
+              Guardar Configuración
             </button>
           </form>
         )}
       </div>
 
-      {/* Sección de Ingresos Extras / Ocasionales */}
-      <h4 style={{ color: '#333', fontSize: '14px', marginBottom: '10px' }}>Ingresos Extras u Ocasionales</h4>
+      {/* Ingresos Extras */}
+      <h4 style={{ color: '#333', fontSize: '14px', marginBottom: '10px' }}>Ingresos Extras / Ocasionales</h4>
       <form onSubmit={handleAddExtraIncome} style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap', border: '1px solid #ddd' }}>
         <input 
           type="text" 
-          placeholder="Fuente (ej. Freelance, Venta extra)" 
+          placeholder="Fuente (ej. Freelance, Venta)" 
           value={source}
           onChange={(e) => setSource(e.target.value)}
           required
@@ -176,7 +186,7 @@ function IncomeManager({ session }) {
           <div key={inc.id} style={{ padding: '8px 12px', background: '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
             <div>
               <span style={{ fontWeight: 'bold', color: '#333' }}>{inc.source}</span>
-              <span style={{ marginLeft: '15px', color: '#27ae60', fontWeight: 'bold' }}>+${inc.amount}</span>
+              <span style={{ marginLeft: '15px', color: '#27ae60', fontWeight: 'bold' }}>+${fmt(inc.amount)}</span>
             </div>
             <button onClick={() => handleDeleteIncome(inc.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
               X

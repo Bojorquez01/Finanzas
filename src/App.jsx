@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import PaymentPlanner from './components/PaymentPlanner';
+import SmartDebtOptimizer from './components/SmartDebtOptimizer';
 import IncomeManager from './components/IncomeManager';
 import CreditCardManager from './components/CreditCardManager';
 import SavingsManager from './components/SavingsManager';
@@ -45,6 +46,9 @@ function App() {
       </div>
 
       <Dashboard session={session} />
+
+      {/* Optimizador Inteligente con Colchón de Supervivencia */}
+      <SmartDebtOptimizer session={session} />
 
       <PaymentPlanner session={session} />
 
