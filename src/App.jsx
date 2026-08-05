@@ -15,6 +15,11 @@ function App() {
   const [cardName, setCardName] = useState('');
   const [dueDay, setDueDay] = useState('');
   
+  // Estados para edición de tarjeta
+  const [editingCardId, setEditingCardId] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editDueDay, setEditDueDay] = useState('');
+
   const [projections, setProjections] = useState([]);
   const [projCardId, setProjCardId] = useState('');
   const [projMonth, setProjMonth] = useState('');
@@ -39,7 +44,6 @@ function App() {
     if (!year || !month) return dateStr;
     const date = new Date(parseInt(year), parseInt(month) - 1, 1);
     const monthName = date.toLocaleString('es-ES', { month: 'long' });
-    // Capitalizar la primera letra del mes
     const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
     return `${capitalizedMonth} ${year}`;
   };
@@ -94,6 +98,32 @@ function App() {
     await supabase.from('credit_cards').insert([{ card_name: cardName, payment_due_day: dueDay ? parseInt(dueDay) : null, user_id: session.user.id }]);
     setCardName('');
     setDueDay('');
+    fetchAllData();
+  };
+
+  // Funciones de Edición y Eliminación de Tarjetas
+  const startEditingCard = (card, e) => {
+    e.stopPropagation();
+    setEditingCardId(card.id);
+    setEditName(card.card_name);
+    setEditDueDay(card.payment_due_day || '');
+  };
+
+  const handleUpdateCard = async (cardId, e) => {
+    e.stopPropagation();
+    if (!editName) return;
+    await supabase.from('credit_cards').update({
+      card_name: editName,
+      payment_due_day: editDueDay ? parseInt(editDueDay) : null
+    }).eq('id', cardId);
+    setEditingCardId(null);
+    fetchAllData();
+  };
+
+  const handleDeleteCard = async (cardId, e) => {
+    e.stopPropagation();
+    if (!confirm('¿Estás seguro de eliminar esta tarjeta y sus proyecciones asociadas?')) return;
+    await supabase.from('credit_cards').delete().eq('id', cardId);
     fetchAllData();
   };
 
@@ -226,25 +256,61 @@ function App() {
                     const cardProjections = projections.filter(p => p.card_id === card.id);
                     const totalCardDebt = cardProjections.reduce((sum, p) => sum + Number(p.amount), 0);
                     const isExpanded = expandedCardId === card.id;
+                    const isEditing = editingCardId === card.id;
 
                     return (
                       <div 
                         key={card.id} 
                         style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'all 0.2s' }}
-                        onClick={() => setExpandedCardId(isExpanded ? null : card.id)}
+                        onClick={() => !isEditing && setExpandedCardId(isExpanded ? null : card.id)}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <h3 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '16px' }}>💳 {card.card_name}</h3>
-                            <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Día de corte/pago: {card.payment_due_day ? `Día ${card.payment_due_day}` : 'No especificado'}</p>
+                        {isEditing ? (
+                          /* Modo Edición */
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
+                            <h4 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '15px' }}>Editar Tarjeta</h4>
+                            <input 
+                              type="text" 
+                              value={editName} 
+                              onChange={(e) => setEditName(e.target.value)} 
+                              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }} 
+                              placeholder="Nombre de tarjeta"
+                            />
+                            <input 
+                              type="number" 
+                              value={editDueDay} 
+                              onChange={(e) => setEditDueDay(e.target.value)} 
+                              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px' }} 
+                              placeholder="Día de corte/pago"
+                            />
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
+                              <button onClick={(e) => handleUpdateCard(card.id, e)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Guardar</button>
+                              <button onClick={(e) => { e.stopPropagation(); setEditingCardId(null); }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Cancelar</button>
+                            </div>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c0392b' }}>${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                            <div style={{ fontSize: '11px', color: '#888' }}>{isExpanded ? '▲ Ocultar detalle' : '▼ Ver detalle'}</div>
-                          </div>
-                        </div>
+                        ) : (
+                          /* Modo Normal */
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                <h3 style={{ margin: '0 0 5px 0', color: '#004085', fontSize: '16px' }}>💳 {card.card_name}</h3>
+                                <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Día de corte/pago: {card.payment_due_day ? `Día ${card.payment_due_day}` : 'No especificado'}</p>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c0392b' }}>${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <div style={{ fontSize: '11px', color: '#888' }}>{isExpanded ? '▲ Ocultar' : '▼ Ver detalle'}</div>
+                              </div>
+                            </div>
 
-                        {isExpanded && (
+                            {/* Botones de acción rápidos */}
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', borderTop: '1px solid #f1f1f1', paddingTop: '8px' }} onClick={(e) => e.stopPropagation()}>
+                              <button onClick={(e) => startEditingCard(card, e)} style={{ background: '#ffc107', color: '#333', border: 'none', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>✏️ Editar</button>
+                              <button onClick={(e) => handleDeleteCard(card.id, e)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>🗑️ Eliminar</button>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Detalle mes a mes al expandir */}
+                        {isExpanded && !isEditing && (
                           <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '10px' }} onClick={(e) => e.stopPropagation()}>
                             <h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '13px' }}>📅 Pagos futuros programados:</h5>
                             {cardProjections.length === 0 ? (
