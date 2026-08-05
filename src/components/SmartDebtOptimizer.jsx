@@ -51,14 +51,14 @@ function SmartDebtOptimizer({ session }) {
     const projSum = (projData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
     setTotalCardsSpent(expSum + projSum);
 
-    // 4. Deudas personales
+    // 4. Deudas personales: Estrictamente donde tu email es el deudor (lo que TÚ debes)
     const { data: debtData } = await supabase
       .from('debts')
       .select('*')
-      .or(`debtor_email.eq.${userEmail},debtor_id.eq.${userId}`)
+      .eq('debtor_email', userEmail)
       .in('status', ['pendiente', 'pago_solicitado', 'por_aceptar']);
 
-    // 5. Unificar ambos mundos en una sola lista de "Deudas y Compromisos Financieros"
+    // 5. Unificar tarjetas y deudas reales
     const formattedPersonalDebts = (debtData || []).map(d => ({
       id: `debt_${d.id}`,
       realId: d.id,
@@ -96,7 +96,6 @@ function SmartDebtOptimizer({ session }) {
 
   const safeAvailableCash = netInc - minLiving - totalCardsSpent;
 
-  // Ordenar por prioridad (1: Alta, 2: Media, 3: Baja) y luego por monto
   const sortedItems = [...combinedDebts].sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority;
     return b.amount - a.amount;
@@ -112,7 +111,7 @@ function SmartDebtOptimizer({ session }) {
     <div style={{ background: '#e8f4fd', border: '1px solid #b8daff', padding: '20px', borderRadius: '8px', marginBottom: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '18px' }}>🛡️ Optimizador y Red de Seguridad Financiera</h3>
       <p style={{ fontSize: '13px', color: '#0056b3', marginBottom: '15px' }}>
-        Integra tus deudas personales y tus estados de cuenta futuros de tarjetas para ordenarlos por prioridad y asignar tu excedente libre.
+        Integra tus deudas personales reales y tus estados de cuenta futuros de tarjetas para ordenarlos por prioridad y asignar tu excedente libre.
       </p>
 
       {/* Indicadores */}
@@ -146,7 +145,7 @@ function SmartDebtOptimizer({ session }) {
         ) : (
           <div>
             <p style={{ fontSize: '13px', color: '#333', marginBottom: '10px' }}>
-              Aquí aparecen tanto tus deudas personales como tus estados de cuenta futuros de tarjetas. Haz clic en la prioridad para reorganizar la estrategia:
+              Aquí aparecen únicamente las deudas que tú debes y tus estados de cuenta de tarjetas. Haz clic en la prioridad para reorganizar la estrategia:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
