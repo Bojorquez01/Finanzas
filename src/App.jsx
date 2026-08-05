@@ -24,7 +24,6 @@ function App() {
   const [projections, setProjections] = useState([]);
   const [projCardId, setProjCardId] = useState('');
   
-  // Estados separados para Mes y Año en Proyecciones
   const currentYear = new Date().getFullYear();
   const currentMonthNum = String(new Date().getMonth() + 1).padStart(2, '0');
   const [projMonthNum, setProjMonthNum] = useState(currentMonthNum);
@@ -101,12 +100,16 @@ function App() {
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!cardName) return;
-    await supabase.from('credit_cards').insert([{ 
+    const { error } = await supabase.from('credit_cards').insert([{ 
       card_name: cardName, 
       cutoff_day: cutoffDay ? parseInt(cutoffDay) : null,
       payment_due_day: dueDay ? parseInt(dueDay) : null, 
       user_id: session.user.id 
     }]);
+    if (error) {
+      alert('Error al crear tarjeta: ' + error.message);
+      return;
+    }
     setCardName('');
     setCutoffDay('');
     setDueDay('');
@@ -124,11 +127,15 @@ function App() {
   const handleUpdateCard = async (cardId, e) => {
     e.stopPropagation();
     if (!editName) return;
-    await supabase.from('credit_cards').update({
+    const { error } = await supabase.from('credit_cards').update({
       card_name: editName,
       cutoff_day: editCutoffDay ? parseInt(editCutoffDay) : null,
       payment_due_day: editDueDay ? parseInt(editDueDay) : null
     }).eq('id', cardId);
+    if (error) {
+      alert('Error al actualizar tarjeta: ' + error.message);
+      return;
+    }
     setEditingCardId(null);
     fetchAllData();
   };
@@ -140,7 +147,11 @@ function App() {
       return;
     }
     if (!confirm('¿Estás seguro de eliminar esta tarjeta?')) return;
-    await supabase.from('credit_cards').delete().eq('id', cardId);
+    const { error } = await supabase.from('credit_cards').delete().eq('id', cardId);
+    if (error) {
+      alert('Error al eliminar tarjeta: ' + error.message);
+      return;
+    }
     fetchAllData();
   };
 
@@ -148,16 +159,20 @@ function App() {
     e.preventDefault();
     if (!projCardId || !projAmount) return;
     
-    // Unir año y mes seleccionado (ej: "2026-08")
     const targetMonth = `${projYear}-${projMonthNum}`;
 
-    await supabase.from('card_statement_projections').insert([{
+    const { error } = await supabase.from('card_statement_projections').insert([{
       card_id: projCardId,
       target_month: targetMonth,
       amount: parseFloat(projAmount),
       description: projDesc,
       user_id: session.user.id
     }]);
+
+    if (error) {
+      alert('⚠️ Error al guardar la proyección en Supabase: ' + error.message);
+      return;
+    }
     
     setProjAmount('');
     setProjDesc('');
@@ -165,7 +180,11 @@ function App() {
   };
 
   const handleDeleteProjection = async (id) => {
-    await supabase.from('card_statement_projections').delete().eq('id', id);
+    const { error } = await supabase.from('card_statement_projections').delete().eq('id', id);
+    if (error) {
+      alert('Error al eliminar proyección: ' + error.message);
+      return;
+    }
     fetchAllData();
   };
 
@@ -174,20 +193,29 @@ function App() {
     const userId = session.user.id;
     const { data: existing } = await supabase.from('user_salary_config').select('id').eq('user_id', userId).maybeSingle();
 
+    let error = null;
     if (existing) {
-      await supabase.from('user_salary_config').update({
+      const res = await supabase.from('user_salary_config').update({
         salary_amount: parseFloat(salaryAmount),
         frequency: salaryFreq,
         min_living_expense: parseFloat(minLiving)
       }).eq('user_id', userId);
+      error = res.error;
     } else {
-      await supabase.from('user_salary_config').insert([{
+      const res = await supabase.from('user_salary_config').insert([{
         user_id: userId,
         salary_amount: parseFloat(salaryAmount),
         frequency: salaryFreq,
         min_living_expense: parseFloat(minLiving)
       }]);
+      error = res.error;
     }
+
+    if (error) {
+      alert('Error al guardar configuración: ' + error.message);
+      return;
+    }
+
     alert('¡Configuración guardada con éxito!');
     fetchAllData();
   };
@@ -195,19 +223,27 @@ function App() {
   const handleAddIncome = async (e) => {
     e.preventDefault();
     if (!incDesc || !incAmount || !incMonth) return;
-    await supabase.from('incomes').insert([{ 
+    const { error } = await supabase.from('incomes').insert([{ 
       description: incDesc, 
       amount: parseFloat(incAmount), 
       target_month: incMonth,
       user_id: session.user.id 
     }]);
+    if (error) {
+      alert('Error al agregar ingreso: ' + error.message);
+      return;
+    }
     setIncDesc('');
     setIncAmount('');
     fetchAllData();
   };
 
   const handleDeleteIncome = async (id) => {
-    await supabase.from('incomes').delete().eq('id', id);
+    const { error } = await supabase.from('incomes').delete().eq('id', id);
+    if (error) {
+      alert('Error al eliminar ingreso: ' + error.message);
+      return;
+    }
     fetchAllData();
   };
 
@@ -267,7 +303,6 @@ function App() {
                   </select>
                 </div>
                 
-                {/* Combo para Mes */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Mes</label>
                   <select value={projMonthNum} onChange={(e) => setProjMonthNum(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
@@ -286,7 +321,6 @@ function App() {
                   </select>
                 </div>
 
-                {/* Combo para Año */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Año</label>
                   <select value={projYear} onChange={(e) => setProjYear(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
