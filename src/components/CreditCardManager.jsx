@@ -5,7 +5,7 @@ function CreditCardManager({ session }) {
   const [categories, setCategories] = useState([]);
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
-  const [projections, setProjections] = useState([]); // Gastos/estados futuros
+  const [projections, setProjections] = useState([]);
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [cardName, setCardName] = useState('');
@@ -19,9 +19,8 @@ function CreditCardManager({ session }) {
   const [editCutoffDay, setEditCutoffDay] = useState('');
   const [editPaymentDueDay, setEditPaymentDueDay] = useState('');
 
-  // Modal de detalle y meses futuros
   const [activeCardDetail, setActiveCardDetail] = useState(null);
-  const [projMonth, setProjMonth] = useState(''); // Ej: '2026-10'
+  const [projMonth, setProjMonth] = useState('');
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
@@ -38,6 +37,8 @@ function CreditCardManager({ session }) {
   useEffect(() => {
     fetchData();
   }, [session]);
+
+  const fmt = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   async function fetchData() {
     const { data: catData } = await supabase.from('expense_categories').select('*').order('id', { ascending: false });
@@ -154,7 +155,6 @@ function CreditCardManager({ session }) {
     if (!error) fetchData();
   };
 
-  // Registrar un cargo o monto para un mes futuro en esta tarjeta
   const handleAddProjection = async (e) => {
     e.preventDefault();
     if (!activeCardDetail || !projMonth || !projAmount) return;
@@ -178,10 +178,13 @@ function CreditCardManager({ session }) {
     if (!error) fetchData();
   };
 
+  // Día actual del mes para verificar si el estado de cuenta ya está listo
+  const currentDayOfMonth = new Date().getDate();
+
   return (
     <div style={{ marginTop: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>
-        Tarjetas de Crédito y Estados de Cuenta Futuros
+        Tarjetas de Crédito, Crédito Disponible y Estados de Cuenta
       </h3>
 
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '25px' }}>
@@ -312,7 +315,7 @@ function CreditCardManager({ session }) {
 
       {/* Listado de Tarjetas */}
       <div>
-        <h4 style={{ color: '#333' }}>Mis Tarjetas</h4>
+        <h4 style={{ color: '#333' }}>Mis Tarjetas y Crédito Disponible</h4>
         {cards.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#666' }}>No hay tarjetas registradas.</p>
         ) : (
@@ -320,10 +323,22 @@ function CreditCardManager({ session }) {
             {cards.map(card => {
               const cardExpenses = expenses.filter(exp => exp.card_id === card.id);
               const totalCardSpent = cardExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+              const availableCredit = card.credit_limit > 0 ? card.credit_limit - totalCardSpent : null;
+              
+              // Ver si el estado de cuenta ya está listo (si hoy el día actual >= día de corte)
+              const isStatementReady = card.cutoff_day && currentDayOfMonth >= card.cutoff_day;
               const isEditing = editingCardId === card.id;
 
               return (
                 <div key={card.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px' }}>
+                  
+                  {/* Alerta de Estado de Cuenta Listo */}
+                  {isStatementReady && (
+                    <div style={{ background: '#d4edda', color: '#155724', padding: '6px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📢 ¡Tu estado de cuenta ya se puede consultar en la app de tu banco! (Día de corte: {card.cutoff_day})
+                    </div>
+                  )}
+
                   {isEditing ? (
                     <form onSubmit={(e) => handleUpdateCard(e, card.id)} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px', background: '#f8f9fa', padding: '10px', borderRadius: '6px' }}>
                       <input type="text" value={editCardName} onChange={(e) => setEditCardName(e.target.value)} required style={{ flex: 2, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }} />
@@ -343,14 +358,19 @@ function CreditCardManager({ session }) {
                         <button onClick={() => startEditingCard(card)} style={{ marginLeft: '8px', background: 'transparent', border: 'none', color: '#007bff', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Editar</button>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {availableCredit !== null && (
+                          <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>
+                            Disponible: ${fmt(availableCredit)}
+                          </span>
+                        )}
                         <button 
                           onClick={() => setActiveCardDetail(card)}
                           style={{ padding: '4px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
                         >
                           👁️ Ver Detalle y Meses Futuros
                         </button>
-                        <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Mes Actual: ${totalCardSpent.toFixed(2)}</span>
+                        <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Consumido: ${fmt(totalCardSpent)}</span>
                       </div>
                     </div>
                   )}
@@ -369,7 +389,7 @@ function CreditCardManager({ session }) {
                             {exp.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
                           </div>
                           <div>
-                            <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>-${exp.amount}</span>
+                            <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>-${fmt(exp.amount)}</span>
                             <button onClick={() => handleDeleteExpense(exp.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
                           </div>
                         </div>
@@ -383,7 +403,7 @@ function CreditCardManager({ session }) {
         )}
       </div>
 
-      {/* Modal de Detalle y Registro de Meses Futuros */}
+      {/* Modal de Detalle y Meses Futuros con formato */}
       {activeCardDetail && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '500px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -396,7 +416,6 @@ function CreditCardManager({ session }) {
               Día de corte: <strong>{activeCardDetail.cutoff_day || 'N/A'}</strong> | Día límite de pago: <strong>{activeCardDetail.payment_due_day || 'N/A'}</strong>
             </p>
 
-            {/* Formulario para registrar cargos a meses futuros (ej. Nu o BBVA proyecciones) */}
             <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #ddd' }}>
               <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#333' }}>Registrar Gasto o Monto para un Mes Futuro</h4>
               <form onSubmit={handleAddProjection} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -407,7 +426,6 @@ function CreditCardManager({ session }) {
                     onChange={(e) => setProjMonth(e.target.value)}
                     required
                     style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                    title="Mes al que corresponderá este estado de cuenta"
                   />
                   <input 
                     type="number" 
@@ -432,7 +450,6 @@ function CreditCardManager({ session }) {
               </form>
             </div>
 
-            {/* Listado de proyecciones futuras */}
             <h4 style={{ fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>Cargos Registrados en Meses Futuros:</h4>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
@@ -448,7 +465,7 @@ function CreditCardManager({ session }) {
                       <span>{proj.description || 'Sin descripción'}</span>
                     </div>
                     <div>
-                      <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>${proj.amount}</span>
+                      <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>${fmt(proj.amount)}</span>
                       <button onClick={() => handleDeleteProjection(proj.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 5px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
                     </div>
                   </div>
