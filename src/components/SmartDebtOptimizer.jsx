@@ -51,15 +51,20 @@ function SmartDebtOptimizer({ session }) {
     const projSum = (projData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
     setTotalCardsSpent(expSum + projSum);
 
-    // 4. Deudas personales: Estrictamente donde tu email es el deudor (lo que TÚ debes)
+    // 4. Deudas personales: Buscando por email o por ID para incluir registros antiguos
     const { data: debtData } = await supabase
       .from('debts')
       .select('*')
-      .eq('debtor_email', userEmail)
+      .or(`debtor_email.eq.${userEmail},debtor_id.eq.${userId}`)
       .in('status', ['pendiente', 'pago_solicitado', 'por_aceptar']);
 
-    // 5. Unificar tarjetas y deudas reales
-    const formattedPersonalDebts = (debtData || []).map(d => ({
+    // Filtrar estrictamente lo que TÚ debes (excluyendo lo que te deben a ti)
+    const validDebts = (debtData || []).filter(d => 
+      d.debtor_email === userEmail || 
+      (d.debtor_id === userId && d.creditor_email !== userEmail)
+    );
+
+    const formattedPersonalDebts = validDebts.map(d => ({
       id: `debt_${d.id}`,
       realId: d.id,
       type: 'personal_debt',
@@ -149,7 +154,7 @@ function SmartDebtOptimizer({ session }) {
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {sortedItems.map((item, index) => {
+              {sortedItems.map((item) => {
                 const badge = getPriorityBadge(item.priority);
                 const suggestedPayment = Math.min(safeAvailableCash / sortedItems.length, item.amount);
 
