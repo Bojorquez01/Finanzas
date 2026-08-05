@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 function SmartDebtOptimizer({ session }) {
   const [minLiving, setMinLiving] = useState(0);
   const [totalCardsSpent, setTotalCardsSpent] = useState(0);
-  const [combinedDebts, setCombinedDebts] = useState([]);
+  const [groupedItems, setGroupedItems] = useState([]);
   const [netInc, setNetInc] = useState(0);
 
   useEffect(() => {
@@ -51,40 +51,50 @@ function SmartDebtOptimizer({ session }) {
     const projSum = (projData || []).reduce((acc, curr) => acc + Number(curr.amount), 0);
     setTotalCardsSpent(expSum + projSum);
 
-    // 4. Deudas personales: Buscando por email o por ID para incluir registros antiguos
+    // 4. Deudas personales
     const { data: debtData } = await supabase
       .from('debts')
       .select('*')
       .or(`debtor_email.eq.${userEmail},debtor_id.eq.${userId}`)
       .in('status', ['pendiente', 'pago_solicitado', 'por_aceptar']);
 
-    // Filtrar estrictamente lo que TÚ debes (excluyendo lo que te deben a ti)
     const validDebts = (debtData || []).filter(d => 
       d.debtor_email === userEmail || 
       (d.debtor_id === userId && d.creditor_email !== userEmail)
     );
 
+    // 5. Mapear deudas personales
     const formattedPersonalDebts = validDebts.map(d => ({
       id: `debt_${d.id}`,
       realId: d.id,
       type: 'personal_debt',
-      title: `Acreedor: ${d.creditor_email}`,
-      description: d.description || 'Préstamo personal',
+      name: `Deuda con: ${d.creditor_email}`,
+      subtitle: d.description || 'Préstamo personal',
       amount: Number(d.amount),
       priority: d.priority || 2,
     }));
 
-    const formattedCardProjections = (projData || []).map(p => ({
-      id: `proj_${p.id}`,
-      realId: p.id,
-      type: 'card_projection',
-      title: `Tarjeta: ${p.credit_cards ? p.credit_cards.card_name : 'Crédito'} (${p.target_month})`,
-      description: p.description || 'Estado de cuenta futuro / MSI',
-      amount: Number(p.amount),
-      priority: p.priority || 2,
-    }));
+    // 6. Agrupar proyecciones de tarjetas por tarjeta (para no mostrar mes por mes)
+    const cardMap = {};
+    (projData || []).forEach(p => {
+      const cardName = p.credit_cards ? p.credit_cards.card_name : 'Tarjeta';
+      if (!cardMap[cardName]) {
+        cardMap[cardName] = {
+          id: `card_group_${cardName}`,
+          realId: p.id,
+          type: 'card_group',
+          name: `Tarjeta: ${cardName}`,
+          subtitle: 'Acumulado de mensualidades / MSI futuras',
+          amount: 0,
+          priority: p.priority || 2,
+        };
+      }
+      cardMap[cardName].amount += Number(p.amount);
+    });
 
-    setCombinedDebts([...formattedPersonalDebts, ...formattedCardProjections]);
+    const formattedCardGroups = Object.values(cardMap);
+
+    setGroupedItems([...formattedPersonalDebts, ...formattedCardGroups]);
   }
 
   const handleChangePriority = async (item) => {
@@ -93,7 +103,8 @@ function SmartDebtOptimizer({ session }) {
     if (item.type === 'personal_debt') {
       await supabase.from('debts').update({ priority: nextPriority }).eq('id', item.realId);
     } else {
-      await supabase.from('card_statement_projections').update({ priority: nextPriority }).eq('id', item.realId);
+      // Si es grupo de tarjeta, actualizamos las proyecciones asociadas
+      await supabase.from('card_statement_projections').update({ priority: nextPriority }).eq('card_id', item.realId);
     }
 
     calculateOptimizer();
@@ -101,7 +112,8 @@ function SmartDebtOptimizer({ session }) {
 
   const safeAvailableCash = netInc - minLiving - totalCardsSpent;
 
-  const sortedItems = [...combinedDebts].sort((a, b) => {
+  // Ordenar por prioridad y monto
+  const sortedItems = [...groupedItems].sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority;
     return b.amount - a.amount;
   });
@@ -116,7 +128,7 @@ function SmartDebtOptimizer({ session }) {
     <div style={{ background: '#e8f4fd', border: '1px solid #b8daff', padding: '20px', borderRadius: '8px', marginBottom: '30px', fontFamily: 'sans-serif' }}>
       <h3 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '18px' }}>🛡️ Optimizador y Red de Seguridad Financiera</h3>
       <p style={{ fontSize: '13px', color: '#0056b3', marginBottom: '15px' }}>
-        Integra tus deudas personales reales y tus estados de cuenta futuros de tarjetas para ordenarlos por prioridad y asignar tu excedente libre.
+        Vista limpia y consolidada de tus compromisos de tarjetas y deudas personales organizados por prioridad.
       </p>
 
       {/* Indicadores */}
@@ -127,7 +139,7 @@ function SmartDebtOptimizer({ session }) {
         </div>
 
         <div style={{ flex: 1, minWidth: '200px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #cce5ff' }}>
-          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TOTALES TARJETAS</p>
+          <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>COMPROMISOS TOTALES</p>
           <p style={{ margin: 0, fontSize: '18px', color: '#dc3545', fontWeight: 'bold' }}>-${fmt(totalCardsSpent)}</p>
         </div>
 
@@ -139,9 +151,9 @@ function SmartDebtOptimizer({ session }) {
         </div>
       </div>
 
-      {/* Plan Unificado */}
+      {/* Plan Consolidado por Mes y Quincena */}
       <div style={{ background: '#fff', padding: '15px', borderRadius: '6px', border: '1px solid #b8daff' }}>
-        <h4 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '15px' }}>💡 Plan de Liquidación Unificado (Tarjetas y Deudas)</h4>
+        <h4 style={{ margin: '0 0 10px 0', color: '#004085', fontSize: '15px' }}>💡 Plan de Liquidación Consolidado</h4>
         
         {sortedItems.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#27ae60', fontWeight: 'bold' }}>
@@ -150,7 +162,7 @@ function SmartDebtOptimizer({ session }) {
         ) : (
           <div>
             <p style={{ fontSize: '13px', color: '#333', marginBottom: '10px' }}>
-              Aquí aparecen únicamente las deudas que tú debes y tus estados de cuenta de tarjetas. Haz clic en la prioridad para reorganizar la estrategia:
+              Resumen general de pagos agrupados por tarjeta y deuda. El excedente libre se distribuye de manera sugerida:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -159,24 +171,24 @@ function SmartDebtOptimizer({ session }) {
                 const suggestedPayment = Math.min(safeAvailableCash / sortedItems.length, item.amount);
 
                 return (
-                  <div key={item.id} style={{ background: '#f8f9fa', padding: '10px 12px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', border: '1px solid #ddd', flexWrap: 'wrap', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div key={item.id} style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', border: '1px solid #ddd', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button 
                         onClick={() => handleChangePriority(item)}
-                        style={{ background: badge.bg, color: badge.color, border: '1px solid #ccc', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                        style={{ background: badge.bg, color: badge.color, border: '1px solid #ccc', padding: '5px 9px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
                         title="Haz clic para cambiar prioridad"
                       >
                         {badge.label} 🔄
                       </button>
                       <div>
-                        <strong>{item.title}</strong>
-                        <div style={{ color: '#555', fontSize: '12px' }}>{item.description}</div>
+                        <strong style={{ fontSize: '14px', color: '#2c3e50' }}>{item.name}</strong>
+                        <div style={{ color: '#555', fontSize: '12px' }}>{item.subtitle}</div>
                       </div>
                     </div>
 
                     <div style={{ textAlign: 'right' }}>
-                      <span style={{ color: '#c0392b', fontWeight: 'bold' }}>Monto: ${fmt(item.amount)}</span>
-                      <div style={{ color: '#27ae60', fontSize: '12px', fontWeight: 'bold' }}>
+                      <span style={{ color: '#c0392b', fontWeight: 'bold', fontSize: '14px' }}>Total: ${fmt(item.amount)}</span>
+                      <div style={{ color: '#27ae60', fontSize: '12px', fontWeight: 'bold', marginTop: '2px' }}>
                         💡 Sugerencia de abono: ${fmt(safeAvailableCash > 0 ? suggestedPayment : 0)}
                       </div>
                     </div>
