@@ -16,7 +16,6 @@ function App() {
   const [cutoffDay, setCutoffDay] = useState('');
   const [dueDay, setDueDay] = useState('');
   
-  // Estados para edición detallada de tarjeta
   const [editingCardId, setEditingCardId] = useState(null);
   const [editName, setEditName] = useState('');
   const [editCutoffDay, setEditCutoffDay] = useState('');
@@ -128,7 +127,6 @@ function App() {
     fetchAllData();
   };
 
-  // Validación para impedir borrado si tiene pagos/deudas pendientes
   const handleDeleteCard = async (cardId, cardProjections, e) => {
     e.stopPropagation();
     if (cardProjections && cardProjections.length > 0) {
@@ -251,14 +249,26 @@ function App() {
             <form onSubmit={handleAddProjection} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <h4 style={{ margin: 0, color: '#333' }}>Registrar Estado de Cuenta Futuro / MSI</h4>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <select value={projCardId} onChange={(e) => setProjCardId(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                  <option value="">Selecciona Tarjeta</option>
-                  {cards.map(c => <option key={c.id} value={c.id}>{c.card_name}</option>)}
-                </select>
-                <input type="month" value={projMonth} onChange={(e) => setProjMonth(e.target.value)} required style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
-                <input type="number" step="0.01" placeholder="Monto ($)" value={projAmount} onChange={(e) => setProjAmount(e.target.value)} required style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Tarjeta</label>
+                  <select value={projCardId} onChange={(e) => setProjCardId(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                    <option value="">Selecciona Tarjeta</option>
+                    {cards.map(c => <option key={c.id} value={c.id}>{c.card_name}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Mes Objetivo</label>
+                  <input type="month" value={projMonth} onChange={(e) => setProjMonth(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Monto ($)</label>
+                  <input type="number" step="0.01" placeholder="Ej. 1500" value={projAmount} onChange={(e) => setProjAmount(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                </div>
               </div>
-              <input type="text" placeholder="Descripción (ej. Mensualidad Laptop)" value={projDesc} onChange={(e) => setProjDesc(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Descripción</label>
+                <input type="text" placeholder="Ej. Mensualidad Laptop" value={projDesc} onChange={(e) => setProjDesc(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+              </div>
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Registrar Proyección</button>
             </form>
 
@@ -279,10 +289,8 @@ function App() {
                         onClick={() => !isEditing && setExpandedCardId(isExpanded ? null : card.id)}
                       >
                         {isEditing ? (
-                          /* Modo Edición Limpio y Etiquetado */
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
                             <h4 style={{ margin: '0 0 2px 0', color: '#004085', fontSize: '15px' }}>✏️ Editar Tarjeta</h4>
-                            
                             <div>
                               <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Nombre de Tarjeta</label>
                               <input 
@@ -292,7 +300,6 @@ function App() {
                                 style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', boxSizing: 'border-box' }} 
                               />
                             </div>
-
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <div style={{ flex: 1 }}>
                                 <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>Día de Corte</label>
@@ -315,14 +322,12 @@ function App() {
                                 />
                               </div>
                             </div>
-
                             <div style={{ display: 'flex', gap: '8px', marginTop: '5px' }}>
                               <button onClick={(e) => handleUpdateCard(card.id, e)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Guardar Cambios</button>
                               <button onClick={(e) => { e.stopPropagation(); setEditingCardId(null); }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Cancelar</button>
                             </div>
                           </div>
                         ) : (
-                          /* Modo Normal */
                           <>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <div>
@@ -336,8 +341,6 @@ function App() {
                                 <div style={{ fontSize: '11px', color: '#888' }}>{isExpanded ? '▲ Ocultar' : '▼ Ver detalle'}</div>
                               </div>
                             </div>
-
-                            {/* Botones de acción rápidos */}
                             <div style={{ display: 'flex', gap: '10px', marginTop: '12px', borderTop: '1px solid #f1f1f1', paddingTop: '8px' }} onClick={(e) => e.stopPropagation()}>
                               <button onClick={(e) => startEditingCard(card, e)} style={{ background: '#ffc107', color: '#333', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>✏️ Editar</button>
                               <button onClick={(e) => handleDeleteCard(card.id, cardProjections, e)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>🗑️ Eliminar</button>
@@ -345,7 +348,6 @@ function App() {
                           </>
                         )}
 
-                        {/* Detalle mes a mes al expandir */}
                         {isExpanded && !isEditing && (
                           <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '10px' }} onClick={(e) => e.stopPropagation()}>
                             <h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '13px' }}>📅 Pagos futuros programados:</h5>
