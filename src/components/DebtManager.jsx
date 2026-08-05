@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 
 function DebtManager({ session }) {
   const [debts, setDebts] = useState([]);
-  const [relationType, setRelationType] = useState('yo_debo'); // 'yo_debo' o 'me_deben'
+  const [relationType, setRelationType] = useState('yo_debo');
   const [otherEmail, setOtherEmail] = useState('');
   const [amount, setAmount] = useState('');
   const [totalMonths, setTotalMonths] = useState('');
@@ -11,7 +11,7 @@ function DebtManager({ session }) {
   const [isRecurring, setIsRecurring] = useState(false);
   
   const [payAmounts, setPayAmounts] = useState({});
-  const [correctionAmounts, setCorrectionAmounts] = useState({}); // Para que el acreedor corrija el monto si es necesario
+  const [correctionAmounts, setCorrectionAmounts] = useState({});
 
   useEffect(() => {
     if (session) fetchDebts();
@@ -40,6 +40,9 @@ function DebtManager({ session }) {
     const debtorEmail = relationType === 'yo_debo' ? session.user.email : otherEmail.trim();
     const creditorEmail = relationType === 'yo_debo' ? otherEmail.trim() : session.user.email;
 
+    // Si tú dices que debes, pasa directo a 'pendiente'. Si otro dice que le debes, queda 'por_aceptar'
+    const initialStatus = relationType === 'yo_debo' ? 'pendiente' : 'por_aceptar';
+
     const { error } = await supabase
       .from('debts')
       .insert([{
@@ -50,7 +53,7 @@ function DebtManager({ session }) {
         monthly_payment: monthlyPay,
         description: description,
         is_recurring: isRecurring,
-        status: 'pendiente'
+        status: initialStatus
       }]);
 
     if (!error) {
@@ -61,6 +64,29 @@ function DebtManager({ session }) {
       setIsRecurring(false);
       fetchDebts();
     }
+  };
+
+  // Aceptar una deuda que alguien registró a tu nombre
+  const handleAcceptNewDebt = async (debtId) => {
+    const { error } = await supabase
+      .from('debts')
+      .update({ status: 'pendiente' })
+      .eq('id', debtId);
+
+    if (!error) fetchDebts();
+  };
+
+  // Rechazar / Eliminar una deuda que alguien registró erróneamente o malintencionadamente a tu nombre
+  const handleRejectNewDebt = async (debtId) => {
+    const confirmReject = window.confirm('¿Estás seguro de rechazar y eliminar esta deuda?');
+    if (!confirmReject) return;
+
+    const { error } = await supabase
+      .from('debts')
+      .delete()
+      .eq('id', debtId);
+
+    if (!error) fetchDebts();
   };
 
   const handleRequestPayment = async (debtId, currentAmount) => {
@@ -78,13 +104,11 @@ function DebtManager({ session }) {
     if (!error) fetchDebts();
   };
 
-  // El acreedor confirma o corrige el pago solicitado
   const handleConfirmOrCorrectPayment = async (debtId, currentAmount, originalPendingAmt, confirm) => {
     let newStatus = 'pendiente';
     let newAmount = currentAmount;
 
     if (confirm) {
-      // Tomamos el monto corregido por el acreedor si lo modificó en el input, de lo contrario usamos el que propuso el deudor
       const finalPaidAmount = correctionAmounts[debtId] !== undefined ? parseFloat(correctionAmounts[debtId]) : originalPendingAmt;
 
       if (isNaN(finalPaidAmount) || finalPaidAmount <= 0) {
@@ -106,7 +130,6 @@ function DebtManager({ session }) {
       .eq('id', debtId);
 
     if (!error) {
-      // Limpiar estado de corrección
       const copy = { ...correctionAmounts };
       delete copy[debtId];
       setCorrectionAmounts(copy);
@@ -122,7 +145,6 @@ function DebtManager({ session }) {
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Préstamos Compartidos</h3>
 
-      {/* Formulario de Creación Dual */}
       <form onSubmit={handleCreateDebt} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #ddd' }}>
         <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Nueva Deuda o Préstamo</h4>
         
@@ -141,7 +163,7 @@ function DebtManager({ session }) {
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <input 
             type="email" 
-            placeholder={relationType === 'yo_debo' ? "Correo del Acreedor (A quien le debes)" : "Correo del Deudor (Quien te debe)"} 
+            placeholder={relationType === 'yo_debo' ? "Correo del Acreedor" : "Correo del Deudor"} 
             value={otherEmail}
             onChange={(e) => setOtherEmail(e.target.value)}
             required
@@ -168,7 +190,7 @@ function DebtManager({ session }) {
 
         <input 
           type="text" 
-          placeholder="Descripción (ej. Spotify Familiar, Préstamo personal)" 
+          placeholder="Descripción (ej. Spotify Familiar, Préstamo)" 
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           style={{ padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
@@ -194,42 +216,54 @@ function DebtManager({ session }) {
           <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas registradas.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {myDebtsAsDebtor.map(debt => (
-              <div key={debt.id} style={{ padding: '12px', background: '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                <div>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Acreedor: {debt.creditor_email}</p>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
-                    {debt.description || 'Sin descripción'}
-                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
-                  </p>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#c0392b', fontWeight: 'bold' }}>
-                    Restante: ${fmt(debt.amount)}
-                  </p>
-                  <p style={{ margin: 0, fontSize: '12px', fontStyle: 'italic', color: debt.status === 'pago_solicitado' ? '#e67e22' : '#27ae60' }}>
-                    Estado: {debt.status === 'pago_solicitado' ? `Pago de $${fmt(debt.pending_amount)} en revisión por el acreedor` : debt.status}
-                  </p>
-                </div>
+            {myDebtsAsDebtor.map(debt => {
+              const isPendingApproval = debt.status === 'por_aceptar';
 
-                {debt.status !== 'pagado' && debt.status !== 'pago_solicitado' && (
-                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      placeholder="Monto a abonar" 
-                      value={payAmounts[debt.id] || ''}
-                      onChange={(e) => setPayAmounts({ ...payAmounts, [debt.id]: e.target.value })}
-                      style={{ width: '100px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                    />
-                    <button onClick={() => handleRequestPayment(debt.id, debt.amount)} style={{ padding: '6px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Abonar</button>
+              return (
+                <div key={debt.id} style={{ padding: '12px', background: isPendingApproval ? '#fff3cd' : '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Acreedor: {debt.creditor_email}</p>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
+                      {debt.description || 'Sin descripción'}
+                      {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
+                    </p>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#c0392b', fontWeight: 'bold' }}>
+                      Restante: ${fmt(debt.amount)}
+                    </p>
+                    <p style={{ margin: 0, fontSize: '12px', fontStyle: 'italic', color: isPendingApproval ? '#856404' : (debt.status === 'pago_solicitado' ? '#e67e22' : '#27ae60') }}>
+                      Estado: {isPendingApproval ? '⚠️ Alguien registró esta deuda a tu nombre (Requiere tu aprobación)' : (debt.status === 'pago_solicitado' ? `Pago de $${fmt(debt.pending_amount)} en revisión` : debt.status)}
+                    </p>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Si requiere aprobación porque alguien más la creó */}
+                  {isPendingApproval ? (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleAcceptNewDebt(debt.id)} style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Aceptar</button>
+                      <button onClick={() => handleRejectNewDebt(debt.id)} style={{ padding: '6px 12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Rechazar</button>
+                    </div>
+                  ) : (
+                    debt.status !== 'pagado' && debt.status !== 'pago_solicitado' && (
+                      <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="Monto a abonar" 
+                          value={payAmounts[debt.id] || ''}
+                          onChange={(e) => setPayAmounts({ ...payAmounts, [debt.id]: e.target.value })}
+                          style={{ width: '100px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                        />
+                        <button onClick={() => handleRequestPayment(debt.id, debt.amount)} style={{ padding: '6px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Abonar</button>
+                      </div>
+                    )
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Por Cobrar (Préstamos que hice / Notificaciones de pago con corrección de monto) */}
+      {/* Por Cobrar */}
       <div>
         <h4 style={{ color: '#27ae60' }}>Por Cobrar / Notificaciones de Pagos</h4>
         {myDebtsAsCreditor.length === 0 ? (
@@ -245,6 +279,12 @@ function DebtManager({ session }) {
                     {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
                   </p>
                   
+                  {debt.status === 'por_aceptar' && (
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#856404', fontStyle: 'italic' }}>
+                      ⏳ Esperando que el deudor acepte la deuda.
+                    </p>
+                  )}
+
                   {debt.status === 'pago_solicitado' && (
                     <div style={{ marginTop: '8px', background: '#fff', padding: '8px', borderRadius: '4px', border: '1px solid #ffeeba' }}>
                       <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#856404', fontWeight: 'bold' }}>
