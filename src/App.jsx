@@ -23,7 +23,13 @@ function App() {
 
   const [projections, setProjections] = useState([]);
   const [projCardId, setProjCardId] = useState('');
-  const [projMonth, setProjMonth] = useState('');
+  
+  // Estados separados para Mes y Año en Proyecciones
+  const currentYear = new Date().getFullYear();
+  const currentMonthNum = String(new Date().getMonth() + 1).padStart(2, '0');
+  const [projMonthNum, setProjMonthNum] = useState(currentMonthNum);
+  const [projYear, setProjYear] = useState(String(currentYear));
+  
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
@@ -140,15 +146,19 @@ function App() {
 
   const handleAddProjection = async (e) => {
     e.preventDefault();
-    if (!projCardId || !projMonth || !projAmount) return;
+    if (!projCardId || !projAmount) return;
+    
+    // Unir año y mes seleccionado (ej: "2026-08")
+    const targetMonth = `${projYear}-${projMonthNum}`;
+
     await supabase.from('card_statement_projections').insert([{
       card_id: projCardId,
-      target_month: projMonth,
+      target_month: targetMonth,
       amount: parseFloat(projAmount),
       description: projDesc,
       user_id: session.user.id
     }]);
-    setProjMonth('');
+    
     setProjAmount('');
     setProjDesc('');
     fetchAllData();
@@ -256,19 +266,49 @@ function App() {
                     {cards.map(c => <option key={c.id} value={c.id}>{c.card_name}</option>)}
                   </select>
                 </div>
+                
+                {/* Combo para Mes */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Mes Objetivo</label>
-                  <input type="month" value={projMonth} onChange={(e) => setProjMonth(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
+                  <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Mes</label>
+                  <select value={projMonthNum} onChange={(e) => setProjMonthNum(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                    <option value="01">Enero</option>
+                    <option value="02">Febrero</option>
+                    <option value="03">Marzo</option>
+                    <option value="04">Abril</option>
+                    <option value="05">Mayo</option>
+                    <option value="06">Junio</option>
+                    <option value="07">Julio</option>
+                    <option value="08">Agosto</option>
+                    <option value="09">Septiembre</option>
+                    <option value="10">Octubre</option>
+                    <option value="11">Noviembre</option>
+                    <option value="12">Diciembre</option>
+                  </select>
                 </div>
+
+                {/* Combo para Año */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Año</label>
+                  <select value={projYear} onChange={(e) => setProjYear(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}>
+                    <option value="2026">2026</option>
+                    <option value="2027">2027</option>
+                    <option value="2028">2028</option>
+                    <option value="2029">2029</option>
+                    <option value="2030">2030</option>
+                  </select>
+                </div>
+
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Monto ($)</label>
                   <input type="number" step="0.01" placeholder="Ej. 1500" value={projAmount} onChange={(e) => setProjAmount(e.target.value)} required style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
                 </div>
               </div>
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>Descripción</label>
                 <input type="text" placeholder="Ej. Mensualidad Laptop" value={projDesc} onChange={(e) => setProjDesc(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
               </div>
+              
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Registrar Proyección</button>
             </form>
 
