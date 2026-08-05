@@ -5,8 +5,9 @@ function DebtManager({ session }) {
   const [debts, setDebts] = useState([]);
   const [creditorEmail, setCreditorEmail] = useState('');
   const [amount, setAmount] = useState('');
-  const [totalMonths, setTotalMonths] = useState('1');
+  const [totalMonths, setTotalMonths] = useState('');
   const [description, setDescription] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false); // Para marcar si es recurrente mensual (ej. Spotify familiar)
   const [payAmounts, setPayAmounts] = useState({});
 
   useEffect(() => {
@@ -27,8 +28,8 @@ function DebtManager({ session }) {
     if (!creditorEmail || !amount) return;
 
     const totalAmt = parseFloat(amount);
-    const months = parseInt(totalMonths) || 1;
-    const monthlyPay = totalAmt / months;
+    const months = totalMonths ? parseInt(totalMonths) : null;
+    const monthlyPay = months ? totalAmt / months : null;
 
     const { error } = await supabase
       .from('debts')
@@ -38,14 +39,16 @@ function DebtManager({ session }) {
         total_months: months,
         monthly_payment: monthlyPay,
         description: description,
+        is_recurring: isRecurring,
         status: 'pendiente'
       }]);
 
     if (!error) {
       setCreditorEmail('');
       setAmount('');
-      setTotalMonths('1');
+      setTotalMonths('');
       setDescription('');
+      setIsRecurring(false);
       fetchDebts();
     }
   };
@@ -53,7 +56,7 @@ function DebtManager({ session }) {
   const handleRequestPayment = async (debtId, currentAmount) => {
     const payVal = parseFloat(payAmounts[debtId]);
     if (!payVal || payVal <= 0 || payVal > currentAmount) {
-      alert('Ingresa un monto válido para el pago.');
+      alert('Ingresa un monto válido para abonar.');
       return;
     }
 
@@ -91,11 +94,10 @@ function DebtManager({ session }) {
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
-      <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Plazos</h3>
+      <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Gastos Compartidos</h3>
 
-      {/* Formulario de Deuda con Meses */}
       <form onSubmit={handleCreateDebt} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #ddd' }}>
-        <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Nueva Deuda</h4>
+        <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Deuda o Gasto Compartido (ej. Spotify Familiar)</h4>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <input 
             type="email" 
@@ -108,7 +110,7 @@ function DebtManager({ session }) {
           <input 
             type="number" 
             step="0.01" 
-            placeholder="Monto Total ($)" 
+            placeholder="Monto ($)" 
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
@@ -117,39 +119,49 @@ function DebtManager({ session }) {
           <input 
             type="number" 
             min="1" 
-            placeholder="Plazo en Meses" 
+            placeholder="Meses (Opcional)" 
             value={totalMonths}
             onChange={(e) => setTotalMonths(e.target.value)}
-            required
-            style={{ width: '110px', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
+            style={{ width: '130px', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
           />
         </div>
         <input 
           type="text" 
-          placeholder="Descripción (ej. Préstamo personal a 6 meses)" 
+          placeholder="Descripción (ej. Cuota mensual Spotify Familiar)" 
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           style={{ padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
         />
-        <button type="submit" style={{ padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', alignSelf: 'flex-start' }}>
-          + Agregar Deuda
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label style={{ fontSize: '13px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={isRecurring} 
+              onChange={(e) => setIsRecurring(e.target.checked)} 
+            />
+            🔄 Es una deuda / gasto compartido recurrente cada mes
+          </label>
+          <button type="submit" style={{ padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>+ Registrar Deuda</button>
+        </div>
       </form>
 
       {/* Mis Deudas */}
       <div style={{ marginBottom: '30px' }}>
         <h4 style={{ color: '#c0392b' }}>Mis Deudas (Lo que debo)</h4>
         {myDebtsAsDebtor.length === 0 ? (
-          <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas registradas.</p>
+          <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {myDebtsAsDebtor.map(debt => (
               <div key={debt.id} style={{ padding: '12px', background: '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Acreedor: {debt.creditor_email}</p>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>{debt.description || 'Sin descripción'}</p>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
+                    {debt.description || 'Sin descripción'}
+                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente mensual</span>}
+                  </p>
                   <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#c0392b', fontWeight: 'bold' }}>
-                    Restante: ${debt.amount} {debt.total_months > 1 && `(Plazo: ${debt.total_months} meses | Aprox. $${Number(debt.monthly_payment).toFixed(2)}/mes)`}
+                    Restante: ${debt.amount}
                   </p>
                   <p style={{ margin: 0, fontSize: '12px', fontStyle: 'italic', color: debt.status === 'pago_solicitado' ? '#e67e22' : '#27ae60' }}>
                     Estado: {debt.status === 'pago_solicitado' ? `Pago de $${debt.pending_amount} en revisión` : debt.status}
@@ -166,9 +178,7 @@ function DebtManager({ session }) {
                       onChange={(e) => setPayAmounts({ ...payAmounts, [debt.id]: e.target.value })}
                       style={{ width: '100px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
                     />
-                    <button onClick={() => handleRequestPayment(debt.id, debt.amount)} style={{ padding: '6px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                      Abonar
-                    </button>
+                    <button onClick={() => handleRequestPayment(debt.id, debt.amount)} style={{ padding: '6px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Abonar</button>
                   </div>
                 )}
               </div>
@@ -179,7 +189,7 @@ function DebtManager({ session }) {
 
       {/* Por Cobrar */}
       <div>
-        <h4 style={{ color: '#27ae60' }}>Por Cobrar / Notificaciones de Pagos</h4>
+        <h4 style={{ color: '#27ae60' }}>Por Cobrar / Notificaciones de Pagos (Ej. Servicios Compartidos)</h4>
         {myDebtsAsCreditor.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#666' }}>Nadie te debe.</p>
         ) : (
@@ -187,11 +197,14 @@ function DebtManager({ session }) {
             {myDebtsAsCreditor.map(debt => (
               <div key={debt.id} style={{ padding: '12px', background: debt.status === 'pago_solicitado' ? '#fff3cd' : '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Deuda Total: ${debt.amount} ({debt.total_months} meses)</p>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>{debt.description}</p>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Deuda Total: ${debt.amount}</p>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
+                    {debt.description}
+                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente mensual</span>}
+                  </p>
                   {debt.status === 'pago_solicitado' && (
                     <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#856404', fontWeight: 'bold' }}>
-                      ⚡ El deudor solicita abonar: ${debt.pending_amount}
+                      ⚡ Solicitud de abono por: ${debt.pending_amount}
                     </p>
                   )}
                 </div>
@@ -209,7 +222,6 @@ function DebtManager({ session }) {
           </div>
         )}
       </div>
-
     </div>
   );
 }

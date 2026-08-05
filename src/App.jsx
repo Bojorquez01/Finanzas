@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
+import PaymentPlanner from './components/PaymentPlanner';
 import IncomeManager from './components/IncomeManager';
 import CreditCardManager from './components/CreditCardManager';
 import DebtManager from './components/DebtManager';
@@ -42,13 +43,16 @@ function App() {
         </div>
       </div>
 
-      {/* Panel de Resumen General (Dashboard) */}
+      {/* Dashboard General */}
       <Dashboard session={session} />
+
+      {/* Asistente de Pagos Quincenales */}
+      <PaymentPlanner session={session} />
 
       {/* Módulo de Ingresos */}
       <IncomeManager session={session} />
 
-      {/* Módulo de Tarjetas y Gastos por Categoría */}
+      {/* Módulo de Tarjetas y Gastos */}
       <CreditCardManager session={session} />
 
       {/* Módulo de Deudas */}
