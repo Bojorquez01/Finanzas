@@ -21,7 +21,6 @@ function App() {
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
-  // Estado para controlar qué tarjeta está expandida (ver detalles mes a mes)
   const [expandedCardId, setExpandedCardId] = useState(null);
 
   const [salaryAmount, setSalaryAmount] = useState('');
@@ -32,6 +31,18 @@ function App() {
   const [incDesc, setIncDesc] = useState('');
   const [incAmount, setIncAmount] = useState('');
   const [incMonth, setIncMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  // Función para formatear fechas tipo "2026-09" a "Septiembre 2026"
+  const formatMonthName = (dateStr) => {
+    if (!dateStr) return '';
+    const [year, month] = dateStr.split('-');
+    if (!year || !month) return dateStr;
+    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const monthName = date.toLocaleString('es-ES', { month: 'long' });
+    // Capitalizar la primera letra del mes
+    const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    return `${capitalizedMonth} ${year}`;
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -186,7 +197,6 @@ function App() {
 
         {activeTab === 'cards' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            {/* Registrar Tarjeta */}
             <form onSubmit={handleAddCard} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
               <h4 style={{ width: '100%', margin: '0 0 5px 0', color: '#333' }}>Registrar Nueva Tarjeta</h4>
               <input type="text" placeholder="Nombre de Tarjeta (ej. Nu, BBVA)" value={cardName} onChange={(e) => setCardName(e.target.value)} required style={{ flex: 2, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }} />
@@ -194,7 +204,6 @@ function App() {
               <button type="submit" style={{ padding: '8px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Agregar Tarjeta</button>
             </form>
 
-            {/* Registrar Proyección Futura */}
             <form onSubmit={handleAddProjection} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <h4 style={{ margin: 0, color: '#333' }}>Registrar Estado de Cuenta Futuro / MSI</h4>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -209,7 +218,6 @@ function App() {
               <button type="submit" style={{ alignSelf: 'flex-end', padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>+ Registrar Proyección</button>
             </form>
 
-            {/* Vista de Tarjetas con Despliegue de Detalles Mes a Mes */}
             <div>
               <h4 style={{ color: '#2c3e50', marginBottom: '15px' }}>Tus Tarjetas (Haz clic para ver el detalle mes a mes)</h4>
               {cards.length === 0 ? <p style={{ color: '#666', fontSize: '13px' }}>No hay tarjetas registradas.</p> : (
@@ -236,7 +244,6 @@ function App() {
                           </div>
                         </div>
 
-                        {/* Detalle mes a mes al hacer clic */}
                         {isExpanded && (
                           <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '10px' }} onClick={(e) => e.stopPropagation()}>
                             <h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '13px' }}>📅 Pagos futuros programados:</h5>
@@ -247,7 +254,7 @@ function App() {
                                 {cardProjections.map(p => (
                                   <div key={p.id} style={{ background: '#f8f9fa', padding: '8px', borderRadius: '4px', border: '1px solid #e9ecef', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
                                     <div>
-                                      <strong>{p.target_month}</strong>: {p.description || 'Sin descripción'}
+                                      <strong>{formatMonthName(p.target_month)}</strong>: {p.description || 'Sin descripción'}
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                       <span style={{ color: '#c0392b', fontWeight: 'bold' }}>${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -300,7 +307,7 @@ function App() {
                   {incomes.map(i => (
                     <div key={i.id} style={{ background: '#fff', padding: '10px 15px', borderRadius: '6px', border: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <strong>{i.description}</strong> ({i.target_month || 'Sin mes'})
+                        <strong>{i.description}</strong> ({formatMonthName(i.target_month) || 'Sin mes'})
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                         <span style={{ color: '#27ae60', fontWeight: 'bold' }}>+${Number(i.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
