@@ -11,11 +11,17 @@ function CreditCardManager({ session }) {
   const [creditLimit, setCreditLimit] = useState('');
   const [paymentDueDay, setPaymentDueDay] = useState('');
   
+  // Estados para edición de tarjetas existentes
+  const [editingCardId, setEditingCardId] = useState(null);
+  const [editCardName, setEditCardName] = useState('');
+  const [editCreditLimit, setEditCreditLimit] = useState('');
+  const [editPaymentDueDay, setEditPaymentDueDay] = useState('');
+
   const [selectedCardId, setSelectedCardId] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
-  const [isRecurring, setIsRecurring] = useState(false); // Nuevo estado para suscripciones
+  const [isRecurring, setIsRecurring] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -56,6 +62,34 @@ function CreditCardManager({ session }) {
       setCardName('');
       setCreditLimit('');
       setPaymentDueDay('');
+      fetchData();
+    }
+  };
+
+  // Iniciar modo de edición para una tarjeta
+  const startEditingCard = (card) => {
+    setEditingCardId(card.id);
+    setEditCardName(card.card_name);
+    setEditCreditLimit(card.credit_limit || '');
+    setEditPaymentDueDay(card.payment_due_day || '');
+  };
+
+  // Guardar cambios de tarjeta editada
+  const handleUpdateCard = async (e, cardId) => {
+    e.preventDefault();
+    if (!editCardName.trim()) return;
+
+    const { error } = await supabase
+      .from('credit_cards')
+      .update({
+        card_name: editCardName,
+        credit_limit: parseFloat(editCreditLimit) || 0,
+        payment_due_day: parseInt(editPaymentDueDay) || null
+      })
+      .eq('id', cardId);
+
+    if (!error) {
+      setEditingCardId(null);
       fetchData();
     }
   };
@@ -213,7 +247,7 @@ function CreditCardManager({ session }) {
         </form>
       </div>
 
-      {/* Listado de Tarjetas */}
+      {/* Listado de Tarjetas con opción de Edición */}
       <div>
         <h4 style={{ color: '#333' }}>Mis Tarjetas y Consumos</h4>
         {cards.length === 0 ? (
@@ -223,22 +257,63 @@ function CreditCardManager({ session }) {
             {cards.map(card => {
               const cardExpenses = expenses.filter(exp => exp.card_id === card.id);
               const totalCardSpent = cardExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+              const isEditing = editingCardId === card.id;
 
               return (
                 <div key={card.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #eee', paddingBottom: '6px' }}>
-                    <div>
-                      <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0056b3' }}>💳 {card.card_name}</span>
-                      {card.payment_due_day && (
-                        <span style={{ marginLeft: '12px', fontSize: '12px', background: '#fff3cd', color: '#856404', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                          Día límite de pago: Día {card.payment_due_day}
-                        </span>
-                      )}
+                  
+                  {/* Si se está editando esta tarjeta */}
+                  {isEditing ? (
+                    <form onSubmit={(e) => handleUpdateCard(e, card.id)} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px', background: '#f8f9fa', padding: '10px', borderRadius: '6px' }}>
+                      <input 
+                        type="text" 
+                        value={editCardName}
+                        onChange={(e) => setEditCardName(e.target.value)}
+                        required
+                        style={{ flex: 2, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      />
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="Límite" 
+                        value={editCreditLimit}
+                        onChange={(e) => setEditCreditLimit(e.target.value)}
+                        style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      />
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="31" 
+                        placeholder="Día límite" 
+                        value={editPaymentDueDay}
+                        onChange={(e) => setEditPaymentDueDay(e.target.value)}
+                        style={{ width: '90px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      />
+                      <button type="submit" style={{ padding: '6px 10px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Guardar</button>
+                      <button type="button" onClick={() => setEditingCardId(null)} style={{ padding: '6px 10px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Cancelar</button>
+                    </form>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #eee', paddingBottom: '6px' }}>
+                      <div>
+                        <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0056b3' }}>💳 {card.card_name}</span>
+                        {card.payment_due_day ? (
+                          <span style={{ marginLeft: '12px', fontSize: '12px', background: '#fff3cd', color: '#856404', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            Día límite de pago: Día {card.payment_due_day}
+                          </span>
+                        ) : (
+                          <span style={{ marginLeft: '12px', fontSize: '12px', background: '#f8d7da', color: '#721c24', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            Sin día límite configurado
+                          </span>
+                        )}
+                        <button onClick={() => startEditingCard(card)} style={{ marginLeft: '10px', background: 'transparent', border: 'none', color: '#007bff', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>
+                          Editar
+                        </button>
+                      </div>
+                      <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>
+                        Total Consumido: ${totalCardSpent.toFixed(2)}
+                      </span>
                     </div>
-                    <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>
-                      Total Consumido: ${totalCardSpent.toFixed(2)}
-                    </span>
-                  </div>
+                  )}
 
                   {cardExpenses.length === 0 ? (
                     <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Sin consumos registrados.</p>
