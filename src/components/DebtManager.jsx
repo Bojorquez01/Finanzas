@@ -3,38 +3,48 @@ import { supabase } from '../supabaseClient';
 
 function DebtManager({ session }) {
   const [debts, setDebts] = useState([]);
-  const [creditorEmail, setCreditorEmail] = useState('');
+  const [relationType, setRelationType] = useState('yo_debo'); // 'yo_debo' o 'me_deben'
+  const [otherEmail, setOtherEmail] = useState('');
   const [amount, setAmount] = useState('');
   const [totalMonths, setTotalMonths] = useState('');
   const [description, setDescription] = useState('');
-  const [isRecurring, setIsRecurring] = useState(false); // Para marcar si es recurrente mensual (ej. Spotify familiar)
+  const [isRecurring, setIsRecurring] = useState(false);
+  
   const [payAmounts, setPayAmounts] = useState({});
+  const [correctionAmounts, setCorrectionAmounts] = useState({}); // Para que el acreedor corrija el monto si es necesario
 
   useEffect(() => {
-    fetchDebts();
+    if (session) fetchDebts();
   }, [session]);
 
+  const fmt = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   async function fetchDebts() {
+    const userEmail = session.user.email;
     const { data, error } = await supabase
       .from('debts')
       .select('*')
-      .or(`debtor_id.eq.${session.user.id},creditor_email.eq.${session.user.email}`);
+      .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail}`);
 
     if (!error) setDebts(data || []);
   }
 
   const handleCreateDebt = async (e) => {
     e.preventDefault();
-    if (!creditorEmail || !amount) return;
+    if (!otherEmail || !amount) return;
 
     const totalAmt = parseFloat(amount);
     const months = totalMonths ? parseInt(totalMonths) : null;
     const monthlyPay = months ? totalAmt / months : null;
 
+    const debtorEmail = relationType === 'yo_debo' ? session.user.email : otherEmail.trim();
+    const creditorEmail = relationType === 'yo_debo' ? otherEmail.trim() : session.user.email;
+
     const { error } = await supabase
       .from('debts')
       .insert([{
-        creditor_email: creditorEmail.trim(),
+        debtor_email: debtorEmail,
+        creditor_email: creditorEmail,
         amount: totalAmt,
         total_months: months,
         monthly_payment: monthlyPay,
@@ -44,7 +54,7 @@ function DebtManager({ session }) {
       }]);
 
     if (!error) {
-      setCreditorEmail('');
+      setOtherEmail('');
       setAmount('');
       setTotalMonths('');
       setDescription('');
@@ -68,12 +78,21 @@ function DebtManager({ session }) {
     if (!error) fetchDebts();
   };
 
-  const handleConfirmPayment = async (debtId, currentAmount, pendingAmt, confirm) => {
+  // El acreedor confirma o corrige el pago solicitado
+  const handleConfirmOrCorrectPayment = async (debtId, currentAmount, originalPendingAmt, confirm) => {
     let newStatus = 'pendiente';
     let newAmount = currentAmount;
 
     if (confirm) {
-      newAmount = currentAmount - pendingAmt;
+      // Tomamos el monto corregido por el acreedor si lo modificó en el input, de lo contrario usamos el que propuso el deudor
+      const finalPaidAmount = correctionAmounts[debtId] !== undefined ? parseFloat(correctionAmounts[debtId]) : originalPendingAmt;
+
+      if (isNaN(finalPaidAmount) || finalPaidAmount <= 0) {
+        alert('Ingresa un monto válido a aplicar.');
+        return;
+      }
+
+      newAmount = currentAmount - finalPaidAmount;
       newStatus = newAmount <= 0 ? 'pagado' : 'pendiente';
     }
 
@@ -86,31 +105,52 @@ function DebtManager({ session }) {
       })
       .eq('id', debtId);
 
-    if (!error) fetchDebts();
+    if (!error) {
+      // Limpiar estado de corrección
+      const copy = { ...correctionAmounts };
+      delete copy[debtId];
+      setCorrectionAmounts(copy);
+      fetchDebts();
+    }
   };
 
-  const myDebtsAsDebtor = debts.filter(d => d.debtor_id === session.user.id);
-  const myDebtsAsCreditor = debts.filter(d => d.creditor_email === session.user.email);
+  const userEmail = session.user.email;
+  const myDebtsAsDebtor = debts.filter(d => d.debtor_email === userEmail);
+  const myDebtsAsCreditor = debts.filter(d => d.creditor_email === userEmail);
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
-      <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Gastos Compartidos</h3>
+      <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Préstamos Compartidos</h3>
 
+      {/* Formulario de Creación Dual */}
       <form onSubmit={handleCreateDebt} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #ddd' }}>
-        <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Deuda o Gasto Compartido (ej. Spotify Familiar)</h4>
+        <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Nueva Deuda o Préstamo</h4>
+        
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          <label style={{ fontSize: '13px', fontWeight: 'bold' }}>Tipo de registro:</label>
+          <select 
+            value={relationType} 
+            onChange={(e) => setRelationType(e.target.value)}
+            style={{ padding: '6px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="yo_debo">Yo le debo a alguien (Deuda)</option>
+            <option value="me_deben">Yo le presté a alguien / Me deben (Por cobrar)</option>
+          </select>
+        </div>
+
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <input 
             type="email" 
-            placeholder="Correo del acreedor (A quien se debe)" 
-            value={creditorEmail}
-            onChange={(e) => setCreditorEmail(e.target.value)}
+            placeholder={relationType === 'yo_debo' ? "Correo del Acreedor (A quien le debes)" : "Correo del Deudor (Quien te debe)"} 
+            value={otherEmail}
+            onChange={(e) => setOtherEmail(e.target.value)}
             required
             style={{ flex: 2, padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
           />
           <input 
             type="number" 
             step="0.01" 
-            placeholder="Monto ($)" 
+            placeholder="Monto Total ($)" 
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
@@ -125,13 +165,15 @@ function DebtManager({ session }) {
             style={{ width: '130px', padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
           />
         </div>
+
         <input 
           type="text" 
-          placeholder="Descripción (ej. Cuota mensual Spotify Familiar)" 
+          placeholder="Descripción (ej. Spotify Familiar, Préstamo personal)" 
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           style={{ padding: '8px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc' }}
         />
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <label style={{ fontSize: '13px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
             <input 
@@ -139,32 +181,32 @@ function DebtManager({ session }) {
               checked={isRecurring} 
               onChange={(e) => setIsRecurring(e.target.checked)} 
             />
-            🔄 Es una deuda / gasto compartido recurrente cada mes
+            🔄 Es un gasto / préstamo recurrente mensual
           </label>
-          <button type="submit" style={{ padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>+ Registrar Deuda</button>
+          <button type="submit" style={{ padding: '8px 14px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>+ Registrar</button>
         </div>
       </form>
 
-      {/* Mis Deudas */}
+      {/* Mis Deudas (Lo que debo) */}
       <div style={{ marginBottom: '30px' }}>
         <h4 style={{ color: '#c0392b' }}>Mis Deudas (Lo que debo)</h4>
         {myDebtsAsDebtor.length === 0 ? (
-          <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas.</p>
+          <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas registradas.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {myDebtsAsDebtor.map(debt => (
-              <div key={debt.id} style={{ padding: '12px', background: '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={debt.id} style={{ padding: '12px', background: '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
                   <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Acreedor: {debt.creditor_email}</p>
                   <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
                     {debt.description || 'Sin descripción'}
-                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente mensual</span>}
+                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
                   </p>
                   <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#c0392b', fontWeight: 'bold' }}>
-                    Restante: ${debt.amount}
+                    Restante: ${fmt(debt.amount)}
                   </p>
                   <p style={{ margin: 0, fontSize: '12px', fontStyle: 'italic', color: debt.status === 'pago_solicitado' ? '#e67e22' : '#27ae60' }}>
-                    Estado: {debt.status === 'pago_solicitado' ? `Pago de $${debt.pending_amount} en revisión` : debt.status}
+                    Estado: {debt.status === 'pago_solicitado' ? `Pago de $${fmt(debt.pending_amount)} en revisión por el acreedor` : debt.status}
                   </p>
                 </div>
 
@@ -187,32 +229,45 @@ function DebtManager({ session }) {
         )}
       </div>
 
-      {/* Por Cobrar */}
+      {/* Por Cobrar (Préstamos que hice / Notificaciones de pago con corrección de monto) */}
       <div>
-        <h4 style={{ color: '#27ae60' }}>Por Cobrar / Notificaciones de Pagos (Ej. Servicios Compartidos)</h4>
+        <h4 style={{ color: '#27ae60' }}>Por Cobrar / Notificaciones de Pagos</h4>
         {myDebtsAsCreditor.length === 0 ? (
-          <p style={{ fontSize: '13px', color: '#666' }}>Nadie te debe.</p>
+          <p style={{ fontSize: '13px', color: '#666' }}>No tienes préstamos o cuentas por cobrar.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {myDebtsAsCreditor.map(debt => (
-              <div key={debt.id} style={{ padding: '12px', background: debt.status === 'pago_solicitado' ? '#fff3cd' : '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={debt.id} style={{ padding: '12px', background: debt.status === 'pago_solicitado' ? '#fff3cd' : '#fff', border: '1px solid #ddd', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
-                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Deuda Total: ${debt.amount}</p>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Deudor: {debt.debtor_email} | Total Restante: ${fmt(debt.amount)}</p>
                   <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#555' }}>
                     {debt.description}
-                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente mensual</span>}
+                    {debt.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
                   </p>
+                  
                   {debt.status === 'pago_solicitado' && (
-                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#856404', fontWeight: 'bold' }}>
-                      ⚡ Solicitud de abono por: ${debt.pending_amount}
-                    </p>
+                    <div style={{ marginTop: '8px', background: '#fff', padding: '8px', borderRadius: '4px', border: '1px solid #ffeeba' }}>
+                      <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#856404', fontWeight: 'bold' }}>
+                        ⚡ El deudor reporta haber pagado: ${fmt(debt.pending_amount)}
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', color: '#333' }}>¿Deseas corregir el monto antes de aceptar?</span>
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          defaultValue={debt.pending_amount}
+                          onChange={(e) => setCorrectionAmounts({ ...correctionAmounts, [debt.id]: e.target.value })}
+                          style={{ width: '90px', padding: '4px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
 
                 {debt.status === 'pago_solicitado' ? (
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => handleConfirmPayment(debt.id, debt.amount, debt.pending_amount, true)} style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Sí, aceptar</button>
-                    <button onClick={() => handleConfirmPayment(debt.id, debt.amount, debt.pending_amount, false)} style={{ padding: '6px 12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>No, rechazar</button>
+                    <button onClick={() => handleConfirmOrCorrectPayment(debt.id, debt.amount, debt.pending_amount, true)} style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Aceptar Pago</button>
+                    <button onClick={() => handleConfirmOrCorrectPayment(debt.id, debt.amount, debt.pending_amount, false)} style={{ padding: '6px 12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Rechazar</button>
                   </div>
                 ) : (
                   <span style={{ fontSize: '12px', color: '#666' }}>Estado: {debt.status}</span>
