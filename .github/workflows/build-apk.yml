@@ -3,6 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ] # (O "master" dependiendo de cómo se llame tu rama principal)
+  workflow_dispatch:     # <--- ESTO AGREGA EL BOTÓN PARA LANZARLO MANUALMENTE DESDE LA WEB
 
 jobs:
   build:
@@ -43,4 +44,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk 
+          path: android/app/build/outputs/apk/debug/app-debug.apk
