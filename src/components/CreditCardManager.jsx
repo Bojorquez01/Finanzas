@@ -163,12 +163,25 @@ function CreditCardManager({ session }) {
       card_id: activeCardDetail.id,
       target_month: projMonth,
       amount: parseFloat(projAmount),
-      description: projDesc
+      description: projDesc,
+      is_paid: false
     }]);
 
     if (!error) {
       setProjAmount('');
       setProjDesc('');
+      fetchData();
+    }
+  };
+
+  // Función para alternar el estado de pagado o pendiente en las proyecciones futuras
+  const handleTogglePaid = async (projId, currentStatus) => {
+    const { error } = await supabase
+      .from('card_statement_projections')
+      .update({ is_paid: !currentStatus })
+      .eq('id', projId);
+
+    if (!error) {
       fetchData();
     }
   };
@@ -323,7 +336,6 @@ function CreditCardManager({ session }) {
               const cardExpenses = expenses.filter(exp => exp.card_id === card.id);
               const currentMonthSpent = cardExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
 
-              // Sumar también las proyecciones de meses futuros para el total comprometido de la tarjeta
               const cardProjections = projections.filter(p => p.card_id === card.id);
               const futureProjectionsTotal = cardProjections.reduce((acc, curr) => acc + Number(curr.amount), 0);
 
@@ -472,8 +484,26 @@ function CreditCardManager({ session }) {
                       </span>
                       <span>{proj.description || 'Sin descripción'}</span>
                     </div>
-                    <div>
-                      <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>${fmt(proj.amount)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: 'bold', color: '#dc3545' }}>${fmt(proj.amount)}</span>
+                      
+                      {/* Botón interactivo para marcar como Pagado o Pendiente */}
+                      <button 
+                        onClick={() => handleTogglePaid(proj.id, proj.is_paid)} 
+                        style={{ 
+                          background: proj.is_paid ? '#28a745' : '#6c757d', 
+                          color: '#fff', 
+                          border: 'none', 
+                          padding: '3px 6px', 
+                          borderRadius: '3px', 
+                          cursor: 'pointer', 
+                          fontSize: '10px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {proj.is_paid ? '✅ Pagado' : '⏳ Pendiente'}
+                      </button>
+
                       <button onClick={() => handleDeleteProjection(proj.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 5px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
                     </div>
                   </div>
