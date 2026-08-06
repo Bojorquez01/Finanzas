@@ -72,16 +72,18 @@ function Auth() {
         </button>
       </form>
 
-      {message && <p style={{ color: message.includes('exitoso') ? 'green' : 'red', fontSize: '13px', textAlign: 'center' }}>{message}</p>}
+      {message && <p style={{ color: message.includes('exitoso') ? 'green' : 'red', fontSize: '13px', textAlign: 'center', marginTop: '10px' }}>{message}</p>}
 
-      <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px' }}>
-        <span 
-          onClick={() => { setIsSignUp(!isSignUp); setEmail(''); setPassword(''); setMessage(''); }} 
-          style={{ color: '#007bff', cursor: 'pointer', textDecoration: 'underline' }}
-        >
-          {isSignUp ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate aquí'}
-        </span>
-      </p>
+      <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid #eee' }} />
+
+      {/* Botón claro para alternar entre Iniciar sesión y Crear cuenta */}
+      <button
+        type="button"
+        onClick={() => { setIsSignUp(!isSignUp); setEmail(''); setPassword(''); setMessage(''); }}
+        style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+      >
+        {isSignUp ? '¿Ya tienes cuenta? Iniciar Sesión' : '¿No tienes cuenta? Crear una cuenta'}
+      </button>
     </div>
   );
 }
