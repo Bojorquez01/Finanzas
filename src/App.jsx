@@ -10,6 +10,8 @@ function App() {
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
 
   const [cards, setCards] = useState([]);
   const [cardName, setCardName] = useState('');
@@ -87,10 +89,53 @@ function App() {
     if (iData) setIncomes(iData);
   }
 
-  const handleLogin = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert('Error: ' + error.message);
+    setAuthMessage('');
+
+    if (!email || !email.trim()) {
+      setAuthMessage('⚠️ Por favor, ingresa tu correo electrónico.');
+      return;
+    }
+    if (!password || !password.trim()) {
+      setAuthMessage('⚠️ Por favor, ingresa tu contraseña.');
+      return;
+    }
+
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setAuthMessage('❌ Error al registrarse: ' + error.message);
+      } else {
+        setEmail('');
+        setPassword('');
+        setIsSignUp(false);
+        setAuthMessage('✅ ¡Cuenta creada con éxito! Por favor inicia sesión con tus datos.');
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setAuthMessage('❌ Error al iniciar sesión: ' + error.message);
+      }
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setAuthMessage('');
+    if (!email || !email.trim()) {
+      setAuthMessage('⚠️ Por favor, escribe primero tu correo electrónico en la casilla de arriba para enviarte las instrucciones.');
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+
+    if (error) {
+      setAuthMessage('❌ Error: ' + error.message);
+    } else {
+      setAuthMessage('✅ ¡Correo enviado con éxito! Revisa tu bandeja de entrada y spam.');
+    }
   };
 
   const handleLogout = async () => {
@@ -161,7 +206,6 @@ function App() {
     
     const targetMonth = `${projYear}-${projMonthNum}`;
 
-    // Corregido: se remueve user_id ya que la tabla no lo requiere ni lo tiene
     const { error } = await supabase.from('card_statement_projections').insert([{
       card_id: projCardId,
       target_month: targetMonth,
@@ -251,13 +295,72 @@ function App() {
 
   if (!session) {
     return (
-      <div style={{ fontFamily: 'sans-serif', maxWidth: '400px', margin: '80px auto', padding: '30px', border: '1px solid #ddd', borderRadius: '8px', background: '#f9f9f9' }}>
-        <h2 style={{ textAlign: 'center', color: '#2c3e50' }}>Gestión Financiera</h2>
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input type="email" placeholder="Correo" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ padding: '10px' }} />
-          <input type="password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ padding: '10px' }} />
-          <button type="submit" style={{ padding: '10px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Entrar</button>
+      <div style={{ fontFamily: 'sans-serif', maxWidth: '400px', margin: '80px auto', padding: '30px', border: '1px solid #ddd', borderRadius: '8px', background: '#f9f9f9', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+        <h2 style={{ textAlign: 'center', color: '#2c3e50', marginBottom: '20px' }}>
+          {isSignUp ? 'Crear Cuenta Financiera' : 'Iniciar Sesión'}
+        </h2>
+        
+        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input 
+            type="email" 
+            placeholder="Correo electrónico" 
+            value={email} 
+            onChange={(e) => setEmail(e.target.value)} 
+            required 
+            style={{ padding: '10px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ccc' }} 
+          />
+          <input 
+            type="password" 
+            placeholder="Contraseña" 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+            required 
+            style={{ padding: '10px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ccc' }} 
+          />
+          <button 
+            type="submit" 
+            style={{ padding: '10px', background: isSignUp ? '#28a745' : '#007bff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}
+          >
+            {isSignUp ? 'Registrarse' : 'Entrar'}
+          </button>
         </form>
+
+        {authMessage && (
+          <div style={{ 
+            color: authMessage.includes('✅') ? '#155724' : '#721c24', 
+            background: authMessage.includes('✅') ? '#d4edda' : '#f8d7da', 
+            border: `1px solid ${authMessage.includes('✅') ? '#c3e6cb' : '#f5c6cb'}`,
+            fontSize: '13px', 
+            textAlign: 'center', 
+            marginTop: '12px', 
+            padding: '10px', 
+            borderRadius: '4px' 
+          }}>
+            {authMessage}
+          </div>
+        )}
+
+        {!isSignUp && (
+          <div style={{ textAlign: 'center', marginTop: '12px' }}>
+            <button 
+              type="button" 
+              onClick={handleForgotPassword} 
+              style={{ background: 'transparent', border: 'none', color: '#007bff', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
+        )}
+
+        <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid #eee' }} />
+
+        <button
+          type="button"
+          onClick={() => { setIsSignUp(!isSignUp); setAuthMessage(''); }}
+          style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
+        >
+          {isSignUp ? '¿Ya tienes cuenta? Iniciar Sesión' : '¿No tienes cuenta? Crear una cuenta'}
+        </button>
       </div>
     );
   }
