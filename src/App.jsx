@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import SmartDebtOptimizer from './components/SmartDebtOptimizer';
 import DebtManager from './components/DebtManager';
+import InvestmentTracker from './components/InvestmentTracker';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -379,6 +380,7 @@ function App() {
         <button onClick={() => setActiveTab('dashboard')} style={{ padding: '9px 16px', background: activeTab === 'dashboard' ? '#007bff' : '#f8f9fa', color: activeTab === 'dashboard' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>📊 Dashboard & Optimizador</button>
         <button onClick={() => setActiveTab('cards')} style={{ padding: '9px 16px', background: activeTab === 'cards' ? '#007bff' : '#f8f9fa', color: activeTab === 'cards' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>💳 Tarjetas y Proyecciones</button>
         <button onClick={() => setActiveTab('debts')} style={{ padding: '9px 16px', background: activeTab === 'debts' ? '#007bff' : '#f8f9fa', color: activeTab === 'debts' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🤝 Control de Deudas</button>
+        <button onClick={() => setActiveTab('investments')} style={{ padding: '9px 16px', background: activeTab === 'investments' ? '#007bff' : '#f8f9fa', color: activeTab === 'investments' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>📈 Inversiones</button>
         <button onClick={() => setActiveTab('config')} style={{ padding: '9px 16px', background: activeTab === 'config' ? '#007bff' : '#f8f9fa', color: activeTab === 'config' ? '#fff' : '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>⚙️ Ingresos y Configuración</button>
       </div>
 
@@ -557,6 +559,8 @@ function App() {
         )}
 
         {activeTab === 'debts' && <DebtManager session={session} />}
+
+        {activeTab === 'investments' && <InvestmentTracker session={session} />}
 
         {activeTab === 'config' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
