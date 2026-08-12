@@ -177,8 +177,12 @@ export default function DebtManager({ session }) {
     return matchesYear && matchesMonth;
   });
 
-  // Función corregida para descarga directa automática sin abrir pestañas
+  // Función infalible mediante iframe oculto para guardar como PDF en móvil y PC
   const handleDownloadPDF = () => {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -188,10 +192,10 @@ export default function DebtManager({ session }) {
           <style>
             body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
             h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
-            .info { margin-bottom: 20px; font-size: 14px; }
+            .info { margin-bottom: 20px; font-size: 14px; background: #f8f9fa; padding: 10px; border-radius: 6px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
-            th { background-color: #f8f9fa; color: #333; }
+            th { background-color: #f1f3f5; color: #333; }
             .liquidado { color: #27ae60; font-weight: bold; }
           </style>
         </head>
@@ -230,17 +234,18 @@ export default function DebtManager({ session }) {
       </html>
     `;
 
-    // Creamos el Blob con tipo text/html y extensión .html para garantizar descarga directa en celular y PC
-    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Estado_de_Cuenta_${filterYear}_${filterMonth}.html`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(htmlContent);
+    iframe.contentDocument.close();
+
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      // Limpiamos el iframe después de un momento
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 500);
   };
 
   return (
@@ -420,7 +425,7 @@ export default function DebtManager({ session }) {
         )}
       </div>
 
-      {/* HISTORIAL / ESTADO DE CUENTA DE DEUDAS Y COBROS CON FILTROS Y DESCARGA DIRECTA */}
+      {/* HISTORIAL / ESTADO DE CUENTA DE DEUDAS Y COBROS CON FILTROS Y PDF */}
       <div style={{ borderTop: '2px solid #ddd', paddingTop: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
           <h4 style={{ color: '#2c3e50', margin: 0 }}>📜 Historial de Pagos y Cobros</h4>
@@ -461,7 +466,7 @@ export default function DebtManager({ session }) {
               onClick={handleDownloadPDF} 
               style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
             >
-              📥 Descargar Reporte (Descarga Directa)
+              📥 Descargar Reporte (PDF)
             </button>
           </div>
         </div>
