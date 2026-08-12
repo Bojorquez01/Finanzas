@@ -6,6 +6,7 @@ function CreditCardManager({ session }) {
   const [cards, setCards] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [projections, setProjections] = useState([]);
+  const [cardPayments, setCardPayments] = useState([]);
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [cardName, setCardName] = useState('');
@@ -24,15 +25,15 @@ function CreditCardManager({ session }) {
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
+  // Estados locales para registrar pagos por tarjeta desde la lista principal
+  const [cardPaymentTypes, setCardPaymentTypes] = useState({}); // { [cardId]: 'completo' | 'minimo' | 'otro' }
+  const [cardCustomAmounts, setCardCustomAmounts] = useState({}); // { [cardId]: monto }
+
   const [selectedCardId, setSelectedCardId] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
-
-  const [isMsi, setIsMsi] = useState(false);
-  const [totalInstallments, setTotalInstallments] = useState('');
-  const [currentInstallment, setCurrentInstallment] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -55,6 +56,9 @@ function CreditCardManager({ session }) {
 
     const { data: projData } = await supabase.from('card_statement_projections').select('*').order('target_month', { ascending: true });
     if (projData) setProjections(projData);
+
+    const { data: payData } = await supabase.from('card_monthly_payments').select('*');
+    if (payData) setCardPayments(payData);
   }
 
   const handleCreateCategory = async (e) => {
@@ -117,35 +121,19 @@ function CreditCardManager({ session }) {
     if (!selectedCardId || !expenseAmount) return;
 
     const totalAmt = parseFloat(expenseAmount);
-    let monthlyAmt = totalAmt;
-    let tInst = 1;
-    let cInst = 1;
-
-    if (isMsi && totalInstallments) {
-      tInst = parseInt(totalInstallments) || 1;
-      cInst = parseInt(currentInstallment) || 1;
-      monthlyAmt = totalAmt / tInst;
-    }
 
     const { error } = await supabase.from('expenses').insert([{
       card_id: selectedCardId,
       category_id: selectedCatId ? parseInt(selectedCatId) : null,
-      amount: monthlyAmt,
+      amount: totalAmt,
       description: expenseDesc,
-      is_recurring: isRecurring,
-      is_msi: isMsi,
-      total_installments: tInst,
-      current_installment: cInst,
-      monthly_installment_amount: monthlyAmt
+      is_recurring: isRecurring
     }]);
 
     if (!error) {
       setExpenseAmount('');
       setExpenseDesc('');
       setIsRecurring(false);
-      setIsMsi(false);
-      setTotalInstallments('');
-      setCurrentInstallment('');
       fetchData();
     }
   };
@@ -174,16 +162,13 @@ function CreditCardManager({ session }) {
     }
   };
 
-  // Función para alternar el estado de pagado o pendiente en las proyecciones futuras
   const handleTogglePaid = async (projId, currentStatus) => {
     const { error } = await supabase
       .from('card_statement_projections')
       .update({ is_paid: !currentStatus })
       .eq('id', projId);
 
-    if (!error) {
-      fetchData();
-    }
+    if (!error) fetchData();
   };
 
   const handleDeleteProjection = async (id) => {
@@ -191,7 +176,28 @@ function CreditCardManager({ session }) {
     if (!error) fetchData();
   };
 
+  // Función para guardar el pago mensual en Supabase
+  const handleSavePayment = async (cardId, type) => {
+    const currentMonthStr = new Date().toISOString().slice(0, 7); // Formato YYYY-MM
+    const customAmt = type === 'otro' ? parseFloat(cardCustomAmounts[cardId]) || 0 : 0;
+
+    const { error } = await supabase.from('card_monthly_payments').upsert([{
+      card_id: cardId,
+      target_month: currentMonthStr,
+      payment_type: type, // 'completo', 'minimo', 'otro'
+      custom_amount: customAmt
+    }], { onConflict: 'card_id,target_month' });
+
+    if (!error) {
+      fetchData();
+      alert('¡Estatus de pago registrado con éxito!');
+    } else {
+      alert('Error al guardar. Asegúrate de haber creado la tabla card_monthly_payments en Supabase.');
+    }
+  };
+
   const currentDayOfMonth = new Date().getDate();
+  const currentMonthString = new Date().toISOString().slice(0, 7);
 
   return (
     <div style={{ marginTop: '30px', fontFamily: 'sans-serif' }}>
@@ -325,9 +331,9 @@ function CreditCardManager({ session }) {
         </form>
       </div>
 
-      {/* Listado de Tarjetas */}
+      {/* Listado de Tarjetas con Opciones de Pago Directas */}
       <div>
-        <h4 style={{ color: '#333' }}>Mis Tarjetas y Crédito Disponible</h4>
+        <h4 style={{ color: '#333' }}>Mis Tarjetas, Crédito Disponible y Pagos Mensuales</h4>
         {cards.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#666' }}>No hay tarjetas registradas.</p>
         ) : (
@@ -344,6 +350,9 @@ function CreditCardManager({ session }) {
               
               const isStatementReady = card.cutoff_day && currentDayOfMonth >= card.cutoff_day;
               const isEditing = editingCardId === card.id;
+              const currentCardPayments = cardPayments.filter(p => p.card_id === card.id);
+
+              const selectedType = cardPaymentTypes[card.id] || 'completo';
 
               return (
                 <div key={card.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px' }}>
@@ -364,7 +373,7 @@ function CreditCardManager({ session }) {
                       <button type="button" onClick={() => setEditingCardId(null)} style={{ padding: '6px 10px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Cancelar</button>
                     </form>
                   ) : (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #eee', paddingBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #eee', paddingBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                       <div>
                         <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0056b3' }}>💳 {card.card_name}</span>
                         <span style={{ marginLeft: '10px', fontSize: '11px', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
@@ -383,17 +392,55 @@ function CreditCardManager({ session }) {
                           onClick={() => setActiveCardDetail(card)}
                           style={{ padding: '4px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
                         >
-                          👁️ Ver Detalle y Meses Futuros
+                          👁️ Ver Gastos y Meses Futuros
                         </button>
                         <div style={{ textAlign: 'right' }}>
                           <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Comprometido: ${fmt(totalCardCommitted)}</span>
-                          <div style={{ fontSize: '10px', color: '#666' }}>
-                            (Mes actual: ${fmt(currentMonthSpent)} | Futuros: ${fmt(futureProjectionsTotal)})
-                          </div>
                         </div>
                       </div>
                     </div>
                   )}
+
+                  {/* BLOQUE VISIBLE DE REGISTRO DE PAGO DE TARJETA */}
+                  <div style={{ background: '#e2f0d9', padding: '12px', borderRadius: '6px', marginBottom: '12px', border: '1px solid #c3e6cb', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#155724' }}>
+                      💳 Registrar Tipo de Pago del Mes Actual ({currentMonthString}):
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <select 
+                        value={selectedType}
+                        onChange={(e) => setCardPaymentTypes({ ...cardPaymentTypes, [card.id]: e.target.value })}
+                        style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      >
+                        <option value="completo">✅ Pago Completo (Sin Intereses)</option>
+                        <option value="minimo">⚠️ Pago Mínimo</option>
+                        <option value="otro">💲 Otro Monto / Parcial</option>
+                      </select>
+
+                      {selectedType === 'otro' && (
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="Monto pagado ($)" 
+                          value={cardCustomAmounts[card.id] || ''}
+                          onChange={(e) => setCardCustomAmounts({ ...cardCustomAmounts, [card.id]: e.target.value })}
+                          style={{ width: '120px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                        />
+                      )}
+
+                      <button 
+                        onClick={() => handleSavePayment(card.id, selectedType, cardCustomAmounts[card.id])}
+                        style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                      >
+                        Guardar Pago
+                      </button>
+                    </div>
+
+                    <div style={{ fontSize: '11px', color: '#333' }}>
+                      <strong>Historial reciente:</strong> {currentCardPayments.length === 0 ? 'Sin registros de pago' : currentCardPayments.map(p => `${p.target_month}: (${p.payment_type}${p.payment_type === 'otro' ? ` $${fmt(p.custom_amount)}` : ''})`).join(' | ')}
+                    </div>
+                  </div>
 
                   {cardExpenses.length === 0 ? (
                     <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Sin consumos este mes.</p>
@@ -406,7 +453,6 @@ function CreditCardManager({ session }) {
                               {exp.expense_categories ? exp.expense_categories.name : 'General'}
                             </span>
                             <span>{exp.description || 'Sin descripción'}</span>
-                            {exp.is_recurring && <span style={{ marginLeft: '8px', background: '#d4edda', color: '#155724', padding: '1px 5px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold' }}>🔄 Recurrente</span>}
                           </div>
                           <div>
                             <span style={{ fontWeight: 'bold', color: '#dc3545', marginRight: '10px' }}>-${fmt(exp.amount)}</span>
@@ -423,7 +469,7 @@ function CreditCardManager({ session }) {
         )}
       </div>
 
-      {/* Modal de Detalle y Meses Futuros */}
+      {/* Modal de Detalle y Proyecciones Futuras */}
       {activeCardDetail && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
           <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '500px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -436,6 +482,7 @@ function CreditCardManager({ session }) {
               Día de corte: <strong>{activeCardDetail.cutoff_day || 'N/A'}</strong> | Día límite de pago: <strong>{activeCardDetail.payment_due_day || 'N/A'}</strong>
             </p>
 
+            {/* APARTADO: CARGOS Y PROYECCIONES FUTURAS */}
             <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #ddd' }}>
               <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#333' }}>Registrar Gasto o Monto para un Mes Futuro</h4>
               <form onSubmit={handleAddProjection} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -464,7 +511,7 @@ function CreditCardManager({ session }) {
                   onChange={(e) => setProjDesc(e.target.value)}
                   style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
                 />
-                <button type="submit" style={{ padding: '6px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                <button type="submit" style={{ padding: '6px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
                   + Agregar al Estado Futuro
                 </button>
               </form>
@@ -487,7 +534,6 @@ function CreditCardManager({ session }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontWeight: 'bold', color: '#dc3545' }}>${fmt(proj.amount)}</span>
                       
-                      {/* Botón interactivo para marcar como Pagado o Pendiente */}
                       <button 
                         onClick={() => handleTogglePaid(proj.id, proj.is_paid)} 
                         style={{ 
@@ -511,7 +557,7 @@ function CreditCardManager({ session }) {
               )}
             </div>
 
-            <button onClick={() => setActiveCardDetail(null)} style={{ width: '100%', padding: '8px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            <button onClick={() => setActiveCardDetail(null)} style={{ width: '100%', padding: '8px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
               Cerrar Detalle
             </button>
           </div>
