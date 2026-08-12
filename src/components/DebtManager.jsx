@@ -14,8 +14,8 @@ export default function DebtManager({ session }) {
   const [correctionAmounts, setCorrectionAmounts] = useState({});
 
   // Estados para los Filtros de Historial
-  const [filterMonth, setFilterMonth] = useState('todos'); // '01', '02', etc.
-  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString()); // '2026', etc.
+  const [filterMonth, setFilterMonth] = useState('todos'); 
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString()); 
 
   useEffect(() => {
     if (session) fetchDebts();
@@ -163,10 +163,8 @@ export default function DebtManager({ session }) {
     d.status !== 'pagado'
   );
 
-  // Historial base
   const debtHistory = debts.filter(d => d.status === 'pagado');
 
-  // Filtrado inteligente por Mes y Año
   const filteredHistory = debtHistory.filter(item => {
     const itemDate = item.last_reset_month || (item.created_at ? item.created_at.slice(0, 7) : '');
     if (!itemDate) return true;
@@ -179,44 +177,78 @@ export default function DebtManager({ session }) {
   });
 
   const handleDownloadPDF = () => {
-    window.print(); // Abre el diálogo nativo para guardar como PDF aplicando los estilos de impresión
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Por favor permite las ventanas emergentes (pop-ups) en tu navegador para generar el PDF.');
+      return;
+    }
+    
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Estado de Cuenta - Gestor Financiero</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
+            h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
+            .info { margin-bottom: 20px; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
+            th { background-color: #f8f9fa; color: #333; }
+            .liquidado { color: #27ae60; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h2>ESTADO DE CUENTA FINANCIERO</h2>
+          <div class="info">
+            <p><strong>Usuario:</strong> ${userEmail}</p>
+            <p><strong>Periodo Filtrado:</strong> Mes: ${filterMonth === 'todos' ? 'Todos' : filterMonth} / Año: ${filterYear}</p>
+            <p><strong>Fecha de emisión:</strong> ${new Date().toLocaleDateString()}</p>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Descripción</th>
+                <th>Deudor</th>
+                <th>Acreedor</th>
+                <th>Tipo</th>
+                <th>Estatus</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredHistory.length === 0 ? '<tr><td colspan="5" style="text-align: center;">No hay movimientos en este periodo.</td></tr>' : 
+                filteredHistory.map(item => `
+                  <tr>
+                    <td>${item.description || 'Sin descripción'}</td>
+                    <td>${item.debtor_email}</td>
+                    <td>${item.creditor_email}</td>
+                    <td>${item.is_recurring ? 'Recurrente' : 'Único'}</td>
+                    <td class="liquidado">Liquidado ✓</td>
+                  </tr>
+                `).join('')}
+            </tbody>
+          </table>
+
+          <script>
+            window.onload = function() {
+              setTimeout(() => {
+                window.print();
+              }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
       
-      {/* Estilos CSS específicos para ocultar paneles y formatear el PDF al imprimir */}
-      <style>{`
-        @media print {
-          form, button, input, select, .no-print {
-            display: none !important;
-          }
-          body {
-            background: white;
-            color: black;
-          }
-          .print-header {
-            display: block !important;
-            text-align: center;
-            margin-bottom: 20px;
-          }
-        }
-        .print-header {
-          display: none;
-        }
-      `}</style>
-
-      {/* Encabezado exclusivo para el PDF impreso */}
-      <div className="print-header">
-        <h2>ESTADO DE CUENTA FINANCIERO</h2>
-        <p>Usuario: <strong>{userEmail}</strong></p>
-        <p>Periodo filtrado: Mes: {filterMonth === 'todos' ? 'Todos' : filterMonth} / Año: {filterYear}</p>
-        <hr style={{ border: '1px solid #ccc', margin: '15px 0' }}/>
-      </div>
-
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Préstamos Compartidos</h3>
 
-      {/* Formulario */}
       <form onSubmit={handleCreateDebt} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #ddd' }}>
         <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Nueva Deuda o Préstamo</h4>
         
@@ -394,7 +426,6 @@ export default function DebtManager({ session }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
           <h4 style={{ color: '#2c3e50', margin: 0 }}>📜 Historial / Estado de Cuenta</h4>
           
-          {/* Controles de Filtros y Botón PDF */}
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <select 
               value={filterMonth} 
