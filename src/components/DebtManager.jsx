@@ -177,9 +177,10 @@ export default function DebtManager({ session }) {
     return matchesYear && matchesMonth;
   });
 
-  // Función para descargar el archivo de forma automática y directa (sin abrir pestañas)
+  // Función corregida para descarga directa automática sin abrir pestañas
   const handleDownloadPDF = () => {
     const htmlContent = `
+      <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8">
@@ -229,17 +230,17 @@ export default function DebtManager({ session }) {
       </html>
     `;
 
-    // Creamos un Blob con el contenido HTML estructurado como documento
-    const blob = new Blob([htmlContent], { type: 'application/pdf;charset=utf-8;' });
+    // Creamos el Blob con tipo text/html y extensión .html para garantizar descarga directa en celular y PC
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
-    // Generamos un elemento enlace temporal invisible para disparar la descarga directa
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Estado_de_Cuenta_${filterYear}_${filterMonth}.html`); // Se descarga como documento listo o imprimible
+    link.setAttribute('download', `Estado_de_Cuenta_${filterYear}_${filterMonth}.html`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -458,7 +459,7 @@ export default function DebtManager({ session }) {
 
             <button 
               onClick={handleDownloadPDF} 
-              style={{ padding: '6px 12px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+              style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
             >
               📥 Descargar Reporte (Descarga Directa)
             </button>
