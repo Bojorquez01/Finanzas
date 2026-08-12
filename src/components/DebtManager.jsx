@@ -177,77 +177,6 @@ export default function DebtManager({ session }) {
     return matchesYear && matchesMonth;
   });
 
-  // Función infalible mediante iframe oculto para guardar como PDF en móvil y PC
-  const handleDownloadPDF = () => {
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Estado de Cuenta - Deudas y Cobros</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
-            h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
-            .info { margin-bottom: 20px; font-size: 14px; background: #f8f9fa; padding: 10px; border-radius: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
-            th { background-color: #f1f3f5; color: #333; }
-            .liquidado { color: #27ae60; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <h2>ESTADO DE CUENTA - DEUDAS Y COBROS PAGADOS</h2>
-          <div class="info">
-            <p><strong>Usuario:</strong> ${userEmail}</p>
-            <p><strong>Periodo Filtrado:</strong> Mes: ${filterMonth === 'todos' ? 'Todos' : filterMonth} / Año: ${filterYear}</p>
-            <p><strong>Fecha de emisión:</strong> ${new Date().toLocaleDateString()}</p>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Descripción</th>
-                <th>Deudor</th>
-                <th>Acreedor</th>
-                <th>Tipo</th>
-                <th>Estatus</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredHistory.length === 0 ? '<tr><td colspan="5" style="text-align: center;">No hay movimientos liquidados en este periodo.</td></tr>' : 
-                filteredHistory.map(item => `
-                  <tr>
-                    <td>${item.description || 'Sin descripción'}</td>
-                    <td>${item.debtor_email}</td>
-                    <td>${item.creditor_email}</td>
-                    <td>${item.is_recurring ? 'Recurrente' : 'Único'}</td>
-                    <td class="liquidado">Liquidado / Pagado ✓</td>
-                  </tr>
-                `).join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-
-    iframe.contentDocument.open();
-    iframe.contentDocument.write(htmlContent);
-    iframe.contentDocument.close();
-
-    setTimeout(() => {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-      // Limpiamos el iframe después de un momento
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 1000);
-    }, 500);
-  };
-
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
       
@@ -425,7 +354,7 @@ export default function DebtManager({ session }) {
         )}
       </div>
 
-      {/* HISTORIAL / ESTADO DE CUENTA DE DEUDAS Y COBROS CON FILTROS Y PDF */}
+      {/* HISTORIAL EN PANTALLA CON FILTROS (SIN BOTÓN DE DESCARGA) */}
       <div style={{ borderTop: '2px solid #ddd', paddingTop: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
           <h4 style={{ color: '#2c3e50', margin: 0 }}>📜 Historial de Pagos y Cobros</h4>
@@ -461,13 +390,6 @@ export default function DebtManager({ session }) {
               <option value="2025">2025</option>
               <option value="2024">2024</option>
             </select>
-
-            <button 
-              onClick={handleDownloadPDF} 
-              style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
-            >
-              📥 Descargar Reporte (PDF)
-            </button>
           </div>
         </div>
 
