@@ -25,9 +25,10 @@ function CreditCardManager({ session }) {
   const [projAmount, setProjAmount] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
-  // Estados locales para registrar pagos por tarjeta desde la lista principal
-  const [cardPaymentTypes, setCardPaymentTypes] = useState({}); // { [cardId]: 'completo' | 'minimo' | 'otro' }
-  const [cardCustomAmounts, setCardCustomAmounts] = useState({}); // { [cardId]: monto }
+  // Estados para el registro de pagos dentro del modal
+  const [paymentMonth, setPaymentMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [paymentType, setPaymentType] = useState('completo');
+  const [paymentCustomAmount, setPaymentCustomAmount] = useState('');
 
   const [selectedCardId, setSelectedCardId] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('');
@@ -176,15 +177,16 @@ function CreditCardManager({ session }) {
     if (!error) fetchData();
   };
 
-  // Función para guardar el pago mensual en Supabase
-  const handleSavePayment = async (cardId, type) => {
-    const currentMonthStr = new Date().toISOString().slice(0, 7); // Formato YYYY-MM
-    const customAmt = type === 'otro' ? parseFloat(cardCustomAmounts[cardId]) || 0 : 0;
+  const handleSavePaymentModal = async (e) => {
+    e.preventDefault();
+    if (!activeCardDetail || !paymentMonth) return;
+
+    const customAmt = paymentType === 'otro' ? parseFloat(paymentCustomAmount) || 0 : 0;
 
     const { error } = await supabase.from('card_monthly_payments').upsert([{
-      card_id: cardId,
-      target_month: currentMonthStr,
-      payment_type: type, // 'completo', 'minimo', 'otro'
+      card_id: activeCardDetail.id,
+      target_month: paymentMonth,
+      payment_type: paymentType,
       custom_amount: customAmt
     }], { onConflict: 'card_id,target_month' });
 
@@ -197,7 +199,6 @@ function CreditCardManager({ session }) {
   };
 
   const currentDayOfMonth = new Date().getDate();
-  const currentMonthString = new Date().toISOString().slice(0, 7);
 
   return (
     <div style={{ marginTop: '30px', fontFamily: 'sans-serif' }}>
@@ -331,9 +332,9 @@ function CreditCardManager({ session }) {
         </form>
       </div>
 
-      {/* Listado de Tarjetas con Opciones de Pago Directas */}
+      {/* Listado de Tarjetas */}
       <div>
-        <h4 style={{ color: '#333' }}>Mis Tarjetas, Crédito Disponible y Pagos Mensuales</h4>
+        <h4 style={{ color: '#333' }}>Mis Tarjetas y Crédito Disponible</h4>
         {cards.length === 0 ? (
           <p style={{ fontSize: '13px', color: '#666' }}>No hay tarjetas registradas.</p>
         ) : (
@@ -350,9 +351,6 @@ function CreditCardManager({ session }) {
               
               const isStatementReady = card.cutoff_day && currentDayOfMonth >= card.cutoff_day;
               const isEditing = editingCardId === card.id;
-              const currentCardPayments = cardPayments.filter(p => p.card_id === card.id);
-
-              const selectedType = cardPaymentTypes[card.id] || 'completo';
 
               return (
                 <div key={card.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px' }}>
@@ -390,9 +388,9 @@ function CreditCardManager({ session }) {
                         )}
                         <button 
                           onClick={() => setActiveCardDetail(card)}
-                          style={{ padding: '4px 10px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                          style={{ padding: '6px 12px', background: '#17a2b8', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                         >
-                          👁️ Ver Gastos y Meses Futuros
+                          👁️ Ver Detalle, Pagos y Meses Futuros
                         </button>
                         <div style={{ textAlign: 'right' }}>
                           <span style={{ fontSize: '13px', color: '#dc3545', fontWeight: 'bold' }}>Total Comprometido: ${fmt(totalCardCommitted)}</span>
@@ -400,47 +398,6 @@ function CreditCardManager({ session }) {
                       </div>
                     </div>
                   )}
-
-                  {/* BLOQUE VISIBLE DE REGISTRO DE PAGO DE TARJETA */}
-                  <div style={{ background: '#e2f0d9', padding: '12px', borderRadius: '6px', marginBottom: '12px', border: '1px solid #c3e6cb', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#155724' }}>
-                      💳 Registrar Tipo de Pago del Mes Actual ({currentMonthString}):
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <select 
-                        value={selectedType}
-                        onChange={(e) => setCardPaymentTypes({ ...cardPaymentTypes, [card.id]: e.target.value })}
-                        style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                      >
-                        <option value="completo">✅ Pago Completo (Sin Intereses)</option>
-                        <option value="minimo">⚠️ Pago Mínimo</option>
-                        <option value="otro">💲 Otro Monto / Parcial</option>
-                      </select>
-
-                      {selectedType === 'otro' && (
-                        <input 
-                          type="number" 
-                          step="0.01" 
-                          placeholder="Monto pagado ($)" 
-                          value={cardCustomAmounts[card.id] || ''}
-                          onChange={(e) => setCardCustomAmounts({ ...cardCustomAmounts, [card.id]: e.target.value })}
-                          style={{ width: '120px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-                        />
-                      )}
-
-                      <button 
-                        onClick={() => handleSavePayment(card.id, selectedType, cardCustomAmounts[card.id])}
-                        style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
-                      >
-                        Guardar Pago
-                      </button>
-                    </div>
-
-                    <div style={{ fontSize: '11px', color: '#333' }}>
-                      <strong>Historial reciente:</strong> {currentCardPayments.length === 0 ? 'Sin registros de pago' : currentCardPayments.map(p => `${p.target_month}: (${p.payment_type}${p.payment_type === 'otro' ? ` $${fmt(p.custom_amount)}` : ''})`).join(' | ')}
-                    </div>
-                  </div>
 
                   {cardExpenses.length === 0 ? (
                     <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Sin consumos este mes.</p>
@@ -469,10 +426,11 @@ function CreditCardManager({ session }) {
         )}
       </div>
 
-      {/* Modal de Detalle y Proyecciones Futuras */}
+      {/* Modal de Detalle, Pagos Mensuales y Proyecciones Futuras */}
       {activeCardDetail && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '500px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: '#fff', padding: '25px', borderRadius: '8px', width: '550px', maxWidth: '90%', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h3 style={{ margin: 0, color: '#0056b3' }}>Detalle de Tarjeta: {activeCardDetail.card_name}</h3>
               <button onClick={() => setActiveCardDetail(null)} style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', fontWeight: 'bold' }}>×</button>
@@ -482,9 +440,59 @@ function CreditCardManager({ session }) {
               Día de corte: <strong>{activeCardDetail.cutoff_day || 'N/A'}</strong> | Día límite de pago: <strong>{activeCardDetail.payment_due_day || 'N/A'}</strong>
             </p>
 
-            {/* APARTADO: CARGOS Y PROYECCIONES FUTURAS */}
-            <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #ddd' }}>
-              <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#333' }}>Registrar Gasto o Monto para un Mes Futuro</h4>
+            {/* APARTADO 1: REGISTRAR PAGO MENSUAL */}
+            <div style={{ background: '#e2f0d9', padding: '14px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #c3e6cb' }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#155724' }}>💳 Registrar Tipo de Pago Mensual</h4>
+              <form onSubmit={handleSavePaymentModal} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type="month" 
+                    value={paymentMonth}
+                    onChange={(e) => setPaymentMonth(e.target.value)}
+                    required
+                    style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                  <select 
+                    value={paymentType}
+                    onChange={(e) => setPaymentType(e.target.value)}
+                    style={{ flex: 1, padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  >
+                    <option value="completo">✅ Pago Completo (Sin Intereses)</option>
+                    <option value="minimo">⚠️ Pago Mínimo</option>
+                    <option value="otro">💲 Otro Monto / Parcial</option>
+                  </select>
+                </div>
+
+                {paymentType === 'otro' && (
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="Monto pagado ($)" 
+                    value={paymentCustomAmount}
+                    onChange={(e) => setPaymentCustomAmount(e.target.value)}
+                    required
+                    style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                )}
+
+                <button type="submit" style={{ padding: '7px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                  Guardar Pago Mensual
+                </button>
+              </form>
+
+              <div style={{ marginTop: '10px', fontSize: '11px', color: '#333' }}>
+                <strong>Historial de pagos:</strong>{' '}
+                {cardPayments.filter(p => p.card_id === activeCardDetail.id).length === 0 ? (
+                  <span>Sin registros de pago aún.</span>
+                ) : (
+                  cardPayments.filter(p => p.card_id === activeCardDetail.id).map(p => `${p.target_month}: (${p.payment_type}${p.payment_type === 'otro' ? ` $${fmt(p.custom_amount)}` : ''})`).join(' | ')
+                )}
+              </div>
+            </div>
+
+            {/* APARTADO 2: CARGOS Y PROYECCIONES FUTURAS */}
+            <div style={{ background: '#f8f9fa', padding: '14px', borderRadius: '6px', marginBottom: '20px', border: '1px solid #ddd' }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333' }}>Registrar Gasto o Monto para un Mes Futuro</h4>
               <form onSubmit={handleAddProjection} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input 
@@ -501,7 +509,7 @@ function CreditCardManager({ session }) {
                     value={projAmount}
                     onChange={(e) => setProjAmount(e.target.value)}
                     required
-                    style={{ width: '100px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                    style={{ width: '110px', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
                   />
                 </div>
                 <input 
@@ -519,7 +527,7 @@ function CreditCardManager({ session }) {
 
             <h4 style={{ fontSize: '14px', color: '#333', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>Cargos Registrados en Meses Futuros:</h4>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '180px', overflowY: 'auto' }}>
               {projections.filter(p => p.card_id === activeCardDetail.id).length === 0 ? (
                 <p style={{ fontSize: '12px', color: '#666' }}>No hay cargos registrados para meses futuros en esta tarjeta.</p>
               ) : (
