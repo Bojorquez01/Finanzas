@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
 function Dashboard({ session }) {
   const [totalIncome, setTotalIncome] = useState(0);
@@ -90,6 +90,13 @@ function Dashboard({ session }) {
       'Deudas Activas': totalDebt,
     },
   ];
+
+  // Datos para la Gráfica Circular (PieChart)
+  const pieData = [
+    { name: 'Ingresos', value: totalIncome, color: '#27ae60' },
+    { name: 'Gastos Tarjetas', value: totalExpenses, color: '#dc3545' },
+    { name: 'Deudas Activas', value: totalDebt, color: '#e67e22' },
+  ].filter(item => item.value > 0); // Solo muestra los que tienen valor mayor a 0
 
   // --- FILTRADO INTELIGENTE PARA EL ESTADO DE CUENTA GENERAL ---
   const filterByDate = (item) => {
@@ -272,23 +279,52 @@ function Dashboard({ session }) {
         </div>
       </div>
 
-      {/* Gráfica de Barras de Flujo de Caja */}
-      <div style={{ background: '#fff', padding: '20px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
-        <h4 style={{ margin: '0 0 15px 0', color: '#1e293b', fontSize: '15px' }}>📈 Comparativa Visual de Flujo de Caja</h4>
-        <div style={{ width: '100%', height: '260px' }}>
-          <ResponsiveContainer>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value) => `$${fmt(value)}`} />
-              <Legend />
-              <Bar dataKey="Ingresos" fill="#27ae60" />
-              <Bar dataKey="Gastos Tarjetas" fill="#dc3545" />
-              <Bar dataKey="Deudas Activas" fill="#e67e22" />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Contenedor de Gráficas en Cuadrícula */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+        
+        {/* Gráfica de Barras de Flujo de Caja */}
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+          <h4 style={{ margin: '0 0 15px 0', color: '#1e293b', fontSize: '15px' }}>📈 Comparativa de Flujo de Caja</h4>
+          <div style={{ width: '100%', height: '260px' }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip formatter={(value) => `$${fmt(value)}`} />
+                <Legend />
+                <Bar dataKey="Ingresos" fill="#27ae60" />
+                <Bar dataKey="Gastos Tarjetas" fill="#dc3545" />
+                <Bar dataKey="Deudas Activas" fill="#e67e22" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
+        {/* Nueva Gráfica de Pastel (Distribución) */}
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+          <h4 style={{ margin: '0 0 15px 0', color: '#1e293b', fontSize: '15px' }}>🥧 Distribución de Movimientos</h4>
+          <div style={{ width: '100%', height: '260px' }}>
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  dataKey="value"
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => `$${fmt(value)}`} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
       </div>
 
       {/* Calculadora de Runway / Meses de Supervivencia */}
