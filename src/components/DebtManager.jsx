@@ -3,7 +3,6 @@ import { supabase } from '../supabaseClient';
 
 export default function DebtManager({ session }) {
   const [debts, setDebts] = useState([]);
-  const [investments, setInvestments] = useState([]);
   const [relationType, setRelationType] = useState('yo_debo');
   const [otherEmail, setOtherEmail] = useState('');
   const [amount, setAmount] = useState('');
@@ -14,15 +13,12 @@ export default function DebtManager({ session }) {
   const [payAmounts, setPayAmounts] = useState({});
   const [correctionAmounts, setCorrectionAmounts] = useState({});
 
-  // Estados para los Filtros de Mes y Año
+  // Estados para los Filtros de Historial
   const [filterMonth, setFilterMonth] = useState('todos'); 
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString()); 
 
   useEffect(() => {
-    if (session) {
-      fetchDebts();
-      fetchInvestments();
-    }
+    if (session) fetchDebts();
   }, [session]);
 
   const fmt = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,7 +33,7 @@ export default function DebtManager({ session }) {
       .or(`debtor_email.eq.${userEmail},creditor_email.eq.${userEmail},debtor_id.eq.${userId}`);
 
     if (!error && data) {
-      const currentMonth = new Date().toISOString().slice(0, 7);
+      const currentMonth = new Date().toISOString().slice(0, 7); // Ej: '2026-08'
       let updatedData = [...data];
 
       for (let debt of updatedData) {
@@ -61,11 +57,6 @@ export default function DebtManager({ session }) {
 
       setDebts(updatedData);
     }
-  }
-
-  async function fetchInvestments() {
-    const { data } = await supabase.from('investments').select('*');
-    if (data) setInvestments(data);
   }
 
   const handleCreateDebt = async (e) => {
@@ -172,10 +163,10 @@ export default function DebtManager({ session }) {
     d.status !== 'pagado'
   );
 
+  // Historial: Puras deudas liquidadas (pagadas / cobradas)
   const debtHistory = debts.filter(d => d.status === 'pagado');
 
-  // --- FILTRADO INTELIGENTE POR MES Y AÑO ---
-  const filterByDate = (item) => {
+  const filteredHistory = debtHistory.filter(item => {
     const itemDate = item.last_reset_month || (item.created_at ? item.created_at.slice(0, 7) : '');
     if (!itemDate) return true;
     const [itemYear, itemMonth] = itemDate.split('-');
@@ -184,62 +175,33 @@ export default function DebtManager({ session }) {
     const matchesMonth = filterMonth === 'todos' || itemMonth === filterMonth;
 
     return matchesYear && matchesMonth;
-  };
+  });
 
-  const filteredHistory = debtHistory.filter(filterByDate);
-  const filteredInvestments = investments.filter(filterByDate);
-
-  // --- GENERACIÓN DE PDF COMPATIBLE CON MÓVIL Y WEB (Blob URL Directo) ---
+  // Función para descargar el archivo de forma automática y directa (sin abrir pestañas)
   const handleDownloadPDF = () => {
     const htmlContent = `
-      <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8">
-          <title>Estado de Cuenta General - Financiero</title>
+          <title>Estado de Cuenta - Deudas y Cobros</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 25px; color: #333; }
+            body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
             h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
-            .info { margin-bottom: 20px; font-size: 13px; background: #f8f9fa; padding: 12px; border-radius: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
-            th { background-color: #f1f3f5; color: #333; }
-            h4 { color: #495057; margin-top: 25px; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; }
+            .info { margin-bottom: 20px; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
+            th { background-color: #f8f9fa; color: #333; }
             .liquidado { color: #27ae60; font-weight: bold; }
           </style>
         </head>
         <body>
-          <h2>ESTADO DE CUENTA GENERAL</h2>
+          <h2>ESTADO DE CUENTA - DEUDAS Y COBROS PAGADOS</h2>
           <div class="info">
             <p><strong>Usuario:</strong> ${userEmail}</p>
             <p><strong>Periodo Filtrado:</strong> Mes: ${filterMonth === 'todos' ? 'Todos' : filterMonth} / Año: ${filterYear}</p>
-            <p><strong>Fecha de Emisión:</strong> ${new Date().toLocaleDateString()}</p>
+            <p><strong>Fecha de emisión:</strong> ${new Date().toLocaleDateString()}</p>
           </div>
 
-          <h4>1. Portafolio de Inversiones en el Periodo</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Plataforma / Tipo</th>
-                <th>Activo</th>
-                <th>Invertido</th>
-                <th>Valor Actual</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredInvestments.length === 0 ? '<tr><td colspan="4" style="text-align: center;">Sin inversiones en este periodo.</td></tr>' : 
-                filteredInvestments.map(i => `
-                  <tr>
-                    <td>${i.platform} • ${i.instrument_type}</td>
-                    <td><strong>${i.name}</strong></td>
-                    <td>$${fmt(i.invested_amount)}</td>
-                    <td>$${fmt(i.current_value)}</td>
-                  </tr>
-                `).join('')}
-            </tbody>
-          </table>
-
-          <h4>2. Historial de Deudas y Movimientos Liquidados</h4>
           <table>
             <thead>
               <tr>
@@ -258,34 +220,31 @@ export default function DebtManager({ session }) {
                     <td>${item.debtor_email}</td>
                     <td>${item.creditor_email}</td>
                     <td>${item.is_recurring ? 'Recurrente' : 'Único'}</td>
-                    <td class="liquidado">Liquidado ✓</td>
+                    <td class="liquidado">Liquidado / Pagado ✓</td>
                   </tr>
                 `).join('')}
             </tbody>
           </table>
-
-          <script>
-            window.onload = function() {
-              setTimeout(() => {
-                window.print();
-              }, 400);
-            }
-          </script>
         </body>
       </html>
     `;
 
-    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    // Creamos un Blob con el contenido HTML estructurado como documento
+    const blob = new Blob([htmlContent], { type: 'application/pdf;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const newWindow = window.open(url, '_blank');
-
-    if (!newWindow) {
-      alert('Tu navegador bloqueó la ventana emergente. Por favor permite las pop-ups para descargar el reporte PDF.');
-    }
+    
+    // Generamos un elemento enlace temporal invisible para disparar la descarga directa
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Estado_de_Cuenta_${filterYear}_${filterMonth}.html`); // Se descarga como documento listo o imprimible
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
+      
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Préstamos Compartidos</h3>
 
       <form onSubmit={handleCreateDebt} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #ddd' }}>
@@ -460,10 +419,10 @@ export default function DebtManager({ session }) {
         )}
       </div>
 
-      {/* ESTADO DE CUENTA GENERAL Y HISTORIAL CON FILTROS Y PDF */}
+      {/* HISTORIAL / ESTADO DE CUENTA DE DEUDAS Y COBROS CON FILTROS Y DESCARGA DIRECTA */}
       <div style={{ borderTop: '2px solid #ddd', paddingTop: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
-          <h4 style={{ color: '#2c3e50', margin: 0 }}>📜 Estado de Cuenta General e Historial</h4>
+          <h4 style={{ color: '#2c3e50', margin: 0 }}>📜 Historial de Pagos y Cobros</h4>
           
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <select 
@@ -499,9 +458,9 @@ export default function DebtManager({ session }) {
 
             <button 
               onClick={handleDownloadPDF} 
-              style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+              style={{ padding: '6px 12px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
             >
-              📥 Descargar Estado de Cuenta General (PDF)
+              📥 Descargar Reporte (Descarga Directa)
             </button>
           </div>
         </div>
