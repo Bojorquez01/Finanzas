@@ -8,14 +8,14 @@ function Dashboard({ session }) {
   const [totalDebt, setTotalDebt] = useState(0);
   const [minLivingExpense, setMinLivingExpense] = useState(0);
 
-  // Estados para las listas detalladas para el Estado de Cuenta General
+  // Estados para las listas de datos generales
   const [incomesList, setIncomesList] = useState([]);
   const [expensesList, setExpensesList] = useState([]);
   const [debtsList, setDebtsList] = useState([]);
   const [investmentsList, setInvestmentsList] = useState([]);
   const [salaryConfig, setSalaryConfig] = useState(null);
 
-  // Estados para los Filtros de Mes y Año del Estado de Cuenta
+  // Estados para los Filtros de Mes y Año del Estado de Cuenta General
   const [filterMonth, setFilterMonth] = useState('todos'); 
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString()); 
 
@@ -47,7 +47,6 @@ function Dashboard({ session }) {
     const { data: incData } = await supabase.from('incomes').select('*').eq('user_id', session.user.id);
     const extrasSum = (incData || []).reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
     setIncomesList(incData || []);
-
     setTotalIncome(salaryMonthly + extrasSum);
 
     // 3. Gastos de tarjetas
@@ -109,7 +108,7 @@ function Dashboard({ session }) {
   const filteredDebts = debtsList.filter(filterByDate);
   const filteredInvestments = investmentsList.filter(filterByDate);
 
-  // --- FUNCIÓN DE DESCARGA DIRECTA DEL ESTADO DE CUENTA GENERAL ---
+  // --- FUNCIÓN DE DESCARGA DIRECTA DEL ESTADO DE CUENTA GENERAL (PDF / HTML) ---
   const handleDownloadGeneralPDF = () => {
     const periodText = `Mes: ${filterMonth === 'todos' ? 'Todos' : filterMonth} / Año: ${filterYear}`;
     
@@ -123,7 +122,7 @@ function Dashboard({ session }) {
             body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
             h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
             .info { margin-bottom: 20px; font-size: 13px; background: #f8f9fa; padding: 12px; border-radius: 6px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 25px; }
             th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
             th { background-color: #f1f3f5; color: #333; }
             h4 { color: #2c3e50; margin-top: 25px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
@@ -152,7 +151,7 @@ function Dashboard({ session }) {
           <h4>2. Egresos y Gastos de Tarjetas</h4>
           <table>
             <thead>
-              <tr><th>Concepto / Tarjeta / Gasto</th><th>Monto</th></tr>
+              <tr><th>Concepto / Gasto</th><th>Monto</th></tr>
             </thead>
             <tbody>
               ${filteredExpenses.length === 0 ? '<tr><td colspan="2" style="text-align: center;">Sin gastos registrados en este periodo.</td></tr>' : 
@@ -200,18 +199,18 @@ function Dashboard({ session }) {
   return (
     <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '30px', fontFamily: 'sans-serif' }}>
       
-      {/* SECCIÓN NUEVA: APARTADO DE ESTADO DE CUENTA GENERAL Y FILTROS */}
-      <div style={{ background: '#fff', padding: '15px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+      {/* APARTADO VISIBLE DEL ESTADO DE CUENTA GENERAL Y SUS FILTROS */}
+      <div style={{ background: '#fff', padding: '18px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div>
-          <h4 style={{ margin: '0 0 4px 0', color: '#1e293b', fontSize: '15px' }}>📄 Generador de Estado de Cuenta General</h4>
-          <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>Selecciona el periodo deseado para descargar tu reporte financiero detallado.</p>
+          <h4 style={{ margin: '0 0 4px 0', color: '#1e293b', fontSize: '16px' }}>📄 Generador de Estado de Cuenta General</h4>
+          <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>Filtra por mes y año para descargar tu reporte financiero consolidado.</p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <select 
             value={filterMonth} 
             onChange={(e) => setFilterMonth(e.target.value)}
-            style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+            style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
           >
             <option value="todos">📅 Todos los Meses</option>
             <option value="01">Enero</option>
@@ -231,7 +230,7 @@ function Dashboard({ session }) {
           <select 
             value={filterYear} 
             onChange={(e) => setFilterYear(e.target.value)}
-            style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+            style={{ padding: '8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
           >
             <option value="todos">Todos los Años</option>
             <option value="2026">2026</option>
@@ -241,7 +240,7 @@ function Dashboard({ session }) {
 
           <button 
             onClick={handleDownloadGeneralPDF} 
-            style={{ padding: '7px 14px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+            style={{ padding: '9px 16px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}
           >
             📥 Descargar Estado de Cuenta General
           </button>
