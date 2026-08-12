@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-function DebtManager({ session }) {
+export default function DebtManager({ session }) {
   const [debts, setDebts] = useState([]);
   const [relationType, setRelationType] = useState('yo_debo');
   const [otherEmail, setOtherEmail] = useState('');
@@ -12,6 +12,10 @@ function DebtManager({ session }) {
   
   const [payAmounts, setPayAmounts] = useState({});
   const [correctionAmounts, setCorrectionAmounts] = useState({});
+
+  // Estados para los Filtros de Historial
+  const [filterMonth, setFilterMonth] = useState('todos'); // '01', '02', etc.
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString()); // '2026', etc.
 
   useEffect(() => {
     if (session) fetchDebts();
@@ -32,18 +36,21 @@ function DebtManager({ session }) {
       const currentMonth = new Date().toISOString().slice(0, 7); // Ej: '2026-08'
       let updatedData = [...data];
 
-      // Verificar y autorenovar deudas recurrentes si estamos en un nuevo mes
       for (let debt of updatedData) {
-        if (debt.is_recurring && debt.last_reset_month !== currentMonth) {
+        if (debt.is_recurring && debt.last_reset_month !== currentMonth && debt.status === 'pagado') {
+          const resetAmount = debt.monthly_payment ? debt.monthly_payment * (debt.total_months || 1) : debt.amount;
+
           await supabase
             .from('debts')
             .update({ 
               status: 'pendiente', 
+              amount: resetAmount > 0 ? resetAmount : debt.amount,
               last_reset_month: currentMonth 
             })
             .eq('id', debt.id);
 
           debt.status = 'pendiente';
+          debt.amount = resetAmount > 0 ? resetAmount : debt.amount;
           debt.last_reset_month = currentMonth;
         }
       }
@@ -58,7 +65,7 @@ function DebtManager({ session }) {
 
     const totalAmt = parseFloat(amount);
     const months = totalMonths ? parseInt(totalMonths) : null;
-    const monthlyPay = months ? totalAmt / months : null;
+    const monthlyPay = months ? totalAmt / months : totalAmt;
     const currentMonth = new Date().toISOString().slice(0, 7);
 
     const debtorEmail = relationType === 'yo_debo' ? session.user.email : otherEmail.trim();
@@ -145,20 +152,71 @@ function DebtManager({ session }) {
   const userId = session.user.id;
   
   const myDebtsAsDebtor = debts.filter(d => 
-    d.debtor_email === userEmail || 
-    (d.debtor_id === userId && d.creditor_email !== userEmail)
+    (d.debtor_email === userEmail || (d.debtor_id === userId && d.creditor_email !== userEmail)) &&
+    d.status !== 'pagado'
   );
 
   const myDebtsAsCreditor = debts.filter(d => 
     d.creditor_email === userEmail && 
     d.debtor_email && 
-    d.debtor_email !== userEmail
+    d.debtor_email !== userEmail &&
+    d.status !== 'pagado'
   );
+
+  // Historial base
+  const debtHistory = debts.filter(d => d.status === 'pagado');
+
+  // Filtrado inteligente por Mes y Año
+  const filteredHistory = debtHistory.filter(item => {
+    const itemDate = item.last_reset_month || (item.created_at ? item.created_at.slice(0, 7) : '');
+    if (!itemDate) return true;
+    const [itemYear, itemMonth] = itemDate.split('-');
+
+    const matchesYear = filterYear === 'todos' || itemYear === filterYear;
+    const matchesMonth = filterMonth === 'todos' || itemMonth === filterMonth;
+
+    return matchesYear && matchesMonth;
+  });
+
+  const handleDownloadPDF = () => {
+    window.print(); // Abre el diálogo nativo para guardar como PDF aplicando los estilos de impresión
+  };
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '10px' }}>
+      
+      {/* Estilos CSS específicos para ocultar paneles y formatear el PDF al imprimir */}
+      <style>{`
+        @media print {
+          form, button, input, select, .no-print {
+            display: none !important;
+          }
+          body {
+            background: white;
+            color: black;
+          }
+          .print-header {
+            display: block !important;
+            text-align: center;
+            margin-bottom: 20px;
+          }
+        }
+        .print-header {
+          display: none;
+        }
+      `}</style>
+
+      {/* Encabezado exclusivo para el PDF impreso */}
+      <div className="print-header">
+        <h2>ESTADO DE CUENTA FINANCIERO</h2>
+        <p>Usuario: <strong>{userEmail}</strong></p>
+        <p>Periodo filtrado: Mes: {filterMonth === 'todos' ? 'Todos' : filterMonth} / Año: {filterYear}</p>
+        <hr style={{ border: '1px solid #ccc', margin: '15px 0' }}/>
+      </div>
+
       <h3 style={{ color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '8px' }}>Control de Deudas y Préstamos Compartidos</h3>
 
+      {/* Formulario */}
       <form onSubmit={handleCreateDebt} style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #ddd' }}>
         <h4 style={{ margin: 0, fontSize: '15px', color: '#333' }}>Registrar Nueva Deuda o Préstamo</h4>
         
@@ -227,7 +285,7 @@ function DebtManager({ session }) {
       <div style={{ marginBottom: '30px' }}>
         <h4 style={{ color: '#c0392b' }}>Mis Deudas (Lo que debo)</h4>
         {myDebtsAsDebtor.length === 0 ? (
-          <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas registradas.</p>
+          <p style={{ fontSize: '13px', color: '#666' }}>No tienes deudas pendientes registradas.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {myDebtsAsDebtor.map(debt => {
@@ -255,7 +313,7 @@ function DebtManager({ session }) {
                       <button onClick={() => handleRejectNewDebt(debt.id)} style={{ padding: '6px 12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>Rechazar</button>
                     </div>
                   ) : (
-                    debt.status !== 'pagado' && debt.status !== 'pago_solicitado' && (
+                    debt.status !== 'pago_solicitado' && (
                       <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                         <input 
                           type="number" 
@@ -277,10 +335,10 @@ function DebtManager({ session }) {
       </div>
 
       {/* Por Cobrar */}
-      <div>
+      <div style={{ marginBottom: '30px' }}>
         <h4 style={{ color: '#27ae60' }}>Por Cobrar / Notificaciones de Pagos</h4>
         {myDebtsAsCreditor.length === 0 ? (
-          <p style={{ fontSize: '13px', color: '#666' }}>No tienes préstamos o cuentas por cobrar.</p>
+          <p style={{ fontSize: '13px', color: '#666' }}>No tienes préstamos o cuentas por cobrar pendientes.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {myDebtsAsCreditor.map(debt => (
@@ -330,8 +388,78 @@ function DebtManager({ session }) {
           </div>
         )}
       </div>
+
+      {/* HISTORIAL / ESTADO DE CUENTA CON FILTROS Y BOTÓN PDF */}
+      <div style={{ borderTop: '2px solid #ddd', paddingTop: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
+          <h4 style={{ color: '#2c3e50', margin: 0 }}>📜 Historial / Estado de Cuenta</h4>
+          
+          {/* Controles de Filtros y Botón PDF */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select 
+              value={filterMonth} 
+              onChange={(e) => setFilterMonth(e.target.value)}
+              style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+            >
+              <option value="todos">📅 Todos los Meses</option>
+              <option value="01">Enero</option>
+              <option value="02">Febrero</option>
+              <option value="03">Marzo</option>
+              <option value="04">Abril</option>
+              <option value="05">Mayo</option>
+              <option value="06">Junio</option>
+              <option value="07">Julio</option>
+              <option value="08">Agosto</option>
+              <option value="09">Septiembre</option>
+              <option value="10">Octubre</option>
+              <option value="11">Noviembre</option>
+              <option value="12">Diciembre</option>
+            </select>
+
+            <select 
+              value={filterYear} 
+              onChange={(e) => setFilterYear(e.target.value)}
+              style={{ padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+            >
+              <option value="todos">Todos los Años</option>
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+            </select>
+
+            <button 
+              onClick={handleDownloadPDF} 
+              style={{ padding: '6px 12px', background: '#6c757d', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
+            >
+              📥 Descargar Estado de Cuenta (PDF)
+            </button>
+          </div>
+        </div>
+
+        {filteredHistory.length === 0 ? (
+          <p style={{ fontSize: '13px', color: '#666' }}>No hay movimientos liquidados en el periodo seleccionado.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {filteredHistory.map(item => (
+              <div key={item.id} style={{ padding: '10px 12px', background: '#f8f9fa', border: '1px solid #e2e8f0', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                <div>
+                  <strong style={{ color: '#333' }}>{item.description || 'Sin descripción'}</strong> 
+                  <span style={{ color: '#666', marginLeft: '8px', fontSize: '12px' }}>
+                    (Deudor: {item.debtor_email} → Acreedor: {item.creditor_email})
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                  <span style={{ color: '#27ae60', fontWeight: 'bold' }}>✓ Liquidado</span>
+                  <span style={{ background: '#e2e8f0', color: '#334155', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>
+                    {item.is_recurring ? 'Recurrente' : 'Único'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
-
-export default DebtManager;
