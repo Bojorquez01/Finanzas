@@ -41,6 +41,8 @@ function App() {
   const [projDesc, setProjDesc] = useState('');
 
   const [expandedCardId, setExpandedCardId] = useState(null);
+  // Guarda qué mes ("cardId-YYYY-MM") tiene desplegado su desglose individual
+  const [expandedMonthKey, setExpandedMonthKey] = useState(null);
 
   const [salaryAmount, setSalaryAmount] = useState('');
   const [salaryFreq, setSalaryFreq] = useState('quincenal');
@@ -63,7 +65,37 @@ function App() {
     return `${capitalizedMonth} ${year}`;
   };
 
-  // Normaliza el nombre de tarjeta para que sea válido como pestaña de Excel (máx. 31 caracteres)
+  // Formatea la fecha límite de pago para el mes YYYY-MM usando payment_due_day de la tarjeta
+  const formatDueDateLabel = (targetMonth, dueDayNum) => {
+    if (!dueDayNum || !targetMonth) return null;
+    const [year, month] = targetMonth.split('-').map(Number);
+    if (!year || !month) return null;
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const clampedDay = Math.min(parseInt(dueDayNum, 10), lastDayOfMonth);
+    const dateObj = new Date(year, month - 1, clampedDay);
+    const monthShort = dateObj.toLocaleString('es-ES', { month: 'short' }).replace('.', '');
+    return `Vence ${String(clampedDay).padStart(2, '0')} ${monthShort}`;
+  };
+
+  // Agrupa los cargos de una tarjeta por mes (target_month) y calcula la sumatoria del mes
+  const groupProjectionsByMonth = (cardProjections) => {
+    const map = new Map();
+    cardProjections.forEach((p) => {
+      const key = p.target_month || 'Sin mes';
+      if (!map.has(key)) {
+        map.set(key, {
+          target_month: key,
+          total: 0,
+          items: []
+        });
+      }
+      const bucket = map.get(key);
+      bucket.total = Number((bucket.total + Number(p.amount || 0)).toFixed(2));
+      bucket.items.push(p);
+    });
+    return Array.from(map.values()).sort((a, b) => a.target_month.localeCompare(b.target_month));
+  };
+
   const getSafeSheetName = (name, existingNames = []) => {
     let clean = (name || 'Tarjeta')
       .replace(/[\\/?*[\]:]/g, '')
@@ -114,7 +146,6 @@ function App() {
     if (iData) setIncomes(iData);
   }
 
-  // --- GENERAR PLANTILLA EXCEL CON UNA HOJA POR TARJETA ---
   const handleDownloadExcelTemplate = () => {
     if (cards.length === 0) {
       alert('Primero registra al menos una tarjeta en "Registrar Nueva Tarjeta" antes de generar la plantilla.');
@@ -176,7 +207,6 @@ function App() {
     XLSX.writeFile(wb, `Plantilla_Tarjetas_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  // --- LEER PLANTILLA EXCEL Y GUARDAR POR PESTAÑA DE TARJETA ---
   const handleUploadExcelTemplate = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -228,7 +258,6 @@ function App() {
 
           const amtVal = parseFloat(String(row[1] || '').replace(/[$,]/g, ''));
           const descVal = String(row[2] || '').trim();
-          const statusVal = String(row[3] || '').trim().toLowerCase();
 
           if (!/^\d{4}-\d{2}$/.test(monthVal)) continue;
           if (isNaN(amtVal) || amtVal <= 0) continue;
@@ -678,7 +707,7 @@ function App() {
             </form>
 
             <div>
-              <h4 style={{ color: '#2c3e50', marginBottom: '15px' }}>Tus Tarjetas (Haz clic para ver el detalle mes a mes)</h4>
+              <h4 style={{ color: '#2c3e50', marginBottom: '15px' }}>Tus Tarjetas (Haz clic para ver el resumen por fecha de pago)</h4>
               {cards.length === 0 ? <p style={{ color: '#666', fontSize: '13px' }}>No hay tarjetas registradas.</p> : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
                   {cards.map(card => {
@@ -686,6 +715,7 @@ function App() {
                     const totalCardDebt = cardProjections.reduce((sum, p) => sum + Number(p.amount), 0);
                     const isExpanded = expandedCardId === card.id;
                     const isEditing = editingCardId === card.id;
+                    const groupedMonths = groupProjectionsByMonth(cardProjections);
 
                     return (
                       <div
@@ -754,7 +784,7 @@ function App() {
                                 </p>
                               </div>
                               <div style={{ textAlign: 'right' }}>
-                                <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c0392b' }}>${totalCardDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c0392b' }}>${Number(totalCardDebt).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 <div style={{ fontSize: '11px', color: '#888' }}>{isExpanded ? '▲ Ocultar' : '▼ Ver detalle'}</div>
                               </div>
                             </div>
@@ -767,22 +797,70 @@ function App() {
 
                         {isExpanded && !isEditing && (
                           <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '10px' }} onClick={(e) => e.stopPropagation()}>
-                            <h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '13px' }}>📅 Pagos futuros programados:</h5>
-                            {cardProjections.length === 0 ? (
+                            <h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '13px' }}>📅 Totales por mes y fecha de pago:</h5>
+                            {groupedMonths.length === 0 ? (
                               <p style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>No hay pagos futuros registrados para esta tarjeta.</p>
                             ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {cardProjections.map(p => (
-                                  <div key={p.id} style={{ background: '#f8f9fa', padding: '8px', borderRadius: '4px', border: '1px solid #e9ecef', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                                    <div>
-                                      <strong>{formatMonthName(p.target_month)}</strong>: {p.description || 'Sin descripción'}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {groupedMonths.map((bucket) => {
+                                  const monthKey = `${card.id}-${bucket.target_month}`;
+                                  const isMonthOpen = expandedMonthKey === monthKey;
+                                  const dueLabel = formatDueDateLabel(bucket.target_month, card.payment_due_day);
+
+                                  return (
+                                    <div key={bucket.target_month} style={{ background: '#f8f9fa', padding: '10px', borderRadius: '6px', border: '1px solid #dee2e6' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <div>
+                                          <strong style={{ fontSize: '13px', color: '#1e293b' }}>{formatMonthName(bucket.target_month)}</strong>
+                                          {dueLabel && (
+                                            <span style={{ marginLeft: '8px', fontSize: '11px', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                              {dueLabel}
+                                            </span>
+                                          )}
+                                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                            {bucket.items.length} concepto{bucket.items.length === 1 ? '' : 's'}
+                                          </div>
+                                        </div>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <span style={{ color: '#c0392b', fontWeight: 'bold', fontSize: '13px' }}>
+                                            ${Number(bucket.total).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setExpandedMonthKey(isMonthOpen ? null : monthKey)}
+                                            style={{
+                                              background: isMonthOpen ? '#0f172a' : '#0284c7',
+                                              color: '#fff',
+                                              border: 'none',
+                                              padding: '4px 8px',
+                                              borderRadius: '4px',
+                                              cursor: 'pointer',
+                                              fontSize: '11px',
+                                              fontWeight: 'bold'
+                                            }}
+                                          >
+                                            {isMonthOpen ? '▲ Ocultar detalle' : '🔍 Ver desglose'}
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {isMonthOpen && (
+                                        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                          {bucket.items.map((p) => (
+                                            <div key={p.id} style={{ background: '#ffffff', padding: '6px 8px', borderRadius: '4px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+                                              <span style={{ color: '#334155', paddingRight: '8px' }}>{p.description || 'Sin descripción'}</span>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                                <strong style={{ color: '#b91c1c' }}>${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                                                <button onClick={() => handleDeleteProjection(p.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <span style={{ color: '#c0392b', fontWeight: 'bold' }}>${Number(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                      <button onClick={() => handleDeleteProjection(p.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>X</button>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
